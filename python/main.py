@@ -1,5 +1,6 @@
 import skimage as ski
 import numpy as np
+from pathlib import Path
 
 
 def load_image(filepath: str) -> np.ndarray:
@@ -106,8 +107,8 @@ def verif_square(im: np.ndarray, squares: np.ndarray) -> []:
 
 
 
-def main():
-    im = load_image("../data/IMG_3891.JPG")
+def process_directory(image_path: str):
+    im = load_image(image_path)
     res = preprocess(im)
 
     ### square detection
@@ -120,9 +121,22 @@ def main():
     ### square verification
     mark = verif_square(res, squares)
     print(len(mark))
-    res_draw = draw_squares(im, mark)
+    res = draw_squares(im, mark)
 
-    save_image("res.png", res_draw)
 
+    output_dir = Path("results")
+    output_dir.mkdir(exist_ok=True)
+
+    output_path = output_dir / f"{Path(image_path).stem}_res.png"
+    save_image(str(output_path), res)
+    # save_image("res.png", res_draw)
+
+
+def main():
+    data_dir = Path("../data")
+
+    for image_file in data_dir.glob("*"):
+        if image_file.suffix.lower() in {".jpg", ".jpeg", ".png"}:
+            process_directory(str(image_file))
 
 main()
