@@ -27,7 +27,7 @@ def bin(im: np.ndarray) -> np.ndarray:
 
 
 def preprocess(im: np.ndarray) -> np.ndarray:
-    im = load_image("../data/IMG_3888.JPG")
+    # im = load_image("../data/IMG_3888.JPG")
     eqalized = histogram_equalization(im)
     gray = grayscale(eqalized)
     bin_im = bin(gray)
@@ -66,7 +66,7 @@ def draw_regions(im_original: np.ndarray, labels: np.ndarray, regions: np.ndarra
     return overlay, im_original
 
 
-def draw_squares(im_original, squares):
+def draw_squares(im_original: np.ndarray, squares):
     img = im_original.copy()
 
     for minr, minc, maxr, maxc in squares:
@@ -89,22 +89,40 @@ def find_squares(im_original: np.ndarray, regions: np.ndarray) -> np.ndarray:
         if (abs(minc-maxc) - 10) <= abs(minr-maxr) and abs(minr-maxr) <= (abs(minc-maxc) + 10):
             squares.append((minr, minc, maxr, maxc))
     res = draw_squares(im_original, squares)
-    print(len(squares))
+    # print(len(squares))
     return squares, res
+
+def verif_square(im: np.ndarray, squares: np.ndarray) -> []:
+    res = []
+    for minr, minc, maxr, maxc in squares:
+        square = im[minr:maxr, minc:maxc]
+        e4 = ski.measure.euler_number(square, connectivity=1)
+        object_nb_4 = ski.measure.label(square, connectivity=1).max()
+        holes_nb_4 = object_nb_4 - e4
+        # print(f'e4:{e4}, nb obj:{object_nb_4}, holes:{holes_nb_4}')
+        if holes_nb_4 == 1 and object_nb_4 == 1:
+            res.append((minr, minc, maxr, maxc))
+    return res
+
 
 
 def main():
-    im = load_image("../data/IMG_3888.JPG")
+    im = load_image("../data/IMG_3891.JPG")
     res = preprocess(im)
 
+    ### square detection
     res = denoising(res)
     lab = labels(res)
     regions = ski.measure.regionprops(lab)
     # overlay, res = draw_regions(im, lab, regions)
-    squares, res = find_squares(im, regions)
+    squares, res_draw = find_squares(im, regions)
 
+    ### square verification
+    mark = verif_square(res, squares)
+    print(len(mark))
+    res_draw = draw_squares(im, mark)
 
-    save_image("res.png", res)
+    save_image("res.png", res_draw)
 
 
 main()
