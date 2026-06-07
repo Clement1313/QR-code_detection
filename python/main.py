@@ -28,7 +28,8 @@ def bin(im: np.ndarray) -> np.ndarray:
 
 
 def preprocess(im: np.ndarray) -> np.ndarray:
-    # im = load_image("../data/IMG_3888.JPG")
+    if im.shape[2] == 4:
+        im = im[:, :, :3]
     eqalized = histogram_equalization(im)
     gray = grayscale(eqalized)
     bin_im = bin(gray)
@@ -86,6 +87,8 @@ def find_squares(im_original: np.ndarray, regions: np.ndarray) -> np.ndarray:
     for region in regions:
         if region.area < 500:
             continue
+        if region.extent < 0.5:
+            continue
         minr, minc, maxr, maxc = region.bbox
         if (abs(minc-maxc) - 10) <= abs(minr-maxr) and abs(minr-maxr) <= (abs(minc-maxc) + 10):
             squares.append((minr, minc, maxr, maxc))
@@ -105,7 +108,28 @@ def verif_square(im: np.ndarray, squares: np.ndarray) -> []:
             res.append((minr, minc, maxr, maxc))
     return res
 
-
+def filter_qr_triplets(markers: list, max_distance: float = 500.0) -> list:
+    if len(markers) < 3:
+        return []
+    centers = np.array([
+        ((minr + maxr) / 2, (minc + maxc) / 2)
+        for minr, minc, maxr, maxc in markers
+    ])
+    def distance(a, b):
+        return np.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
+    triplets = []
+    n = len(markers)
+    for i in range(n):
+        for j in range(i+1, n):
+            if distance(centers[i], centers[j]) > max_distance:
+                continue
+            for k in range(j+1, n):
+                if distance(centers[i], centers[k]) > max_distance:
+                    continue
+                if distance(centers[j], centers[k]) > max_distance:
+                    continue
+                triplets.append((markers[i], markers[j], markers[k]))
+    return triplets
 
 def process_directory(image_path: str):
     im = load_image(image_path)
@@ -120,8 +144,10 @@ def process_directory(image_path: str):
 
     ### square verification
     mark = verif_square(res, squares)
-    print(len(mark))
-    res = draw_squares(im, mark)
+    triplets = filter_qr_triplets(mark)
+    print(f"{len(triplets)} QR code détectés")
+    valid_markers = list({m for triplet in triplets for m in triplet})
+    res = draw_squares(im, valid_markers)
 
 
     output_dir = Path("results")
@@ -138,5 +164,6 @@ def main():
     for image_file in data_dir.glob("*"):
         if image_file.suffix.lower() in {".jpg", ".jpeg", ".png"}:
             process_directory(str(image_file))
+    # process_directory("../data/Pastedimage.JPG")
 
 main()
