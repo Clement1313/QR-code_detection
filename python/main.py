@@ -156,14 +156,162 @@ def process_directory(image_path: str):
     output_path = output_dir / f"{Path(image_path).stem}_res.png"
     save_image(str(output_path), res)
     # save_image("res.png", res_draw)
+    return valid_markers
+
+def precision(tp: int, fp: int) -> float:
+    if tp + fp:
+        return float(tp) / float(tp + fp)
+    return 0
+
+def recall(tp: int, fn: int) -> float:
+    if tp + fn:
+        return float(tp) / float(tp + fn)
+    return 0
+
+def f1(tp: int, fp: int,fn:int) -> float:
+    pres = precision(tp, fp)
+    recal = recall(tp, fn)
+    if pres + recal:
+        return float(2* pres * recal) / float(pres + recal)
+    return 0
 
 
+
+
+def compute_iou( box1,  box2) :
+    aminr, aminc, amaxr, amaxc = box1
+    bminr, bminc, bmaxr, bmaxc = box2
+    xA = max(aminc, bminc)
+    yA = max(aminr, bminr)
+    xB = min(amaxc, bmaxc)
+    yB = min(amaxr, bmaxr)
+    inter = max(0, xB-xA) * max(0, yB-yA)
+    areaA = (amaxc-aminc)*(amaxr-aminr)
+    areaB = (bmaxc-bminc)*(bmaxr-bminr)
+
+    union = areaA + areaB - inter
+    if union == 0:
+        return 0
+
+    return inter / union
+
+def evaluate(detections, ground_truth, threshold=0.5):
+    matched_gt = set()
+    tp = 0
+    fp = 0
+    for det in detections:
+        best_iou = 0
+        best_gt = -1
+        for i, gt in enumerate(ground_truth):
+            if i in matched_gt:
+                continue
+            iou = compute_iou(det, gt)
+            if iou > best_iou:
+                best_iou = iou
+                best_gt = i
+        if best_iou >= threshold:
+            tp += 1
+            matched_gt.add(best_gt)
+        else:
+            fp += 1
+    fn = len(ground_truth) - len(matched_gt)
+    return tp, fp, fn
+
+def mean_iou(detections, ground_truth):
+    scores = []
+    used = set()
+    for det in detections:
+        best = 0
+        best_gt = -1
+        for i,gt in enumerate(ground_truth):
+            if i in used:
+                continue
+            iou = compute_iou(det,gt)
+            if iou>best:
+                best=iou
+                best_gt=i
+        if best_gt!=-1:
+            used.add(best_gt)
+            scores.append(best)
+    if len(scores)==0:
+        return 0
+    return np.mean(scores)
+
+def get_result(valid_makers,ground_truth):
+    tp,fp,fn = evaluate(valid_makers,ground_truth)
+    pres = precision(tp, fp)
+    recal = recall(tp, fn)
+    f = f1(tp,fp,fn)
+    print("Precision :", pres)
+    print("Recall :", recal)
+    print("F1 :", f)
+
+
+# Vérité terrain pour l'évaluation (3 marqueurs par QR code attendus)
+groun_truh = {
+    # 1. Image de l'écran de PC (QR code en bas à droite de l'écran)
+    "IMG_3888.JPG": [
+        (2910, 2110, 2990, 2190),  # Marqueur Haut-Gauche
+        (2915, 2240, 2995, 2320),  # Marqueur Haut-Droite
+        (3040, 2115, 3120, 2195)  # Marqueur Bas-Gauche
+    ],
+
+    # 2. Image du PC portable de face (Sticker QR sur la table à gauche)
+    "IMG_3889.JPG": [
+        (2210, 170, 2320, 280),  # Marqueur Haut-Gauche
+        (2110, 310, 2220, 420),  # Marqueur Haut-Droite
+        (2390, 315, 2500, 425)  # Marqueur Bas-Gauche
+    ],
+
+    # 3. Image du PC vue du dessus (Sticker QR plus proche et droit)
+    "IMG_3890.JPG": [
+        (1910, 380, 2030, 500),  # Marqueur Haut-Gauche
+        (1915, 730, 2035, 850),  # Marqueur Haut-Droite
+        (2250, 375, 2370, 495)  # Marqueur Bas-Gauche
+    ],
+
+    "IMG_3891.JPG": [
+        (2040, 790, 2150, 900),  # Marqueur Haut-Gauche (vu incliné)
+        (1880, 1070, 1990, 1180),  # Marqueur Haut-Droite
+        (2210, 1140, 2320, 1250)  # Marqueur Bas-Gauche
+    ],
+
+    "IMG_3892.JPG": [
+        (2110, 1720, 2240, 1850),  # Marqueur Haut-Gauche
+        (2120, 2220, 2250, 2350),  # Marqueur Haut-Droite
+        (2510, 1740, 2640, 1870)  # Marqueur Bas-Gauche
+    ],
+
+    "IMG_3895.JPG": [
+        (1610, 1110, 1790, 1290),  # Marqueur Haut-Gauche (boîte englobante large due à l'angle)
+        (1350, 1700, 1530, 1880),  # Marqueur Haut-Droite
+        (2020, 1430, 2200, 1610)  # Marqueur Bas-Gauche
+    ],
+
+    "Pastedimage.JPG": [
+        (220, 140, 290, 210),  # Marqueur Haut-Gauche
+        (90, 245, 160, 315),  # Marqueur Haut-Droite
+        (325, 250, 395, 320)  # Marqueur Bas-Gauche
+    ]
+}
 def main():
     data_dir = Path("../data")
 
     for image_file in data_dir.glob("*"):
         if image_file.suffix.lower() in {".jpg", ".jpeg", ".png"}:
-            process_directory(str(image_file))
+            img_name = image_file.name
+            print(f"\nTraitement de : {img_name}")
+            predictions = process_directory(str(image_file))
+
+            if img_name in groun_truh:
+                truth = groun_truh[img_name]
+                print(f"Évaluation par rapport à la vérité terrain ({len(truth)} attendu(s)) :")
+                # 3. On calcule et on affiche la Précision, le Rappel et le F1-Score
+                get_result(predictions, truth)
+
+                # Optionnel : afficher aussi le score moyen de superposition (IoU)
+                miou = mean_iou(predictions, truth)
+                print(f"Mean IoU : {miou:.2f}")
     # process_directory("../data/Pastedimage.JPG")
 
 main()
