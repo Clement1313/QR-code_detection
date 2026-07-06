@@ -1,7 +1,9 @@
+from itertools import combinations
+
 import skimage as ski
 import numpy as np
 from pathlib import Path
-
+from square_detection import square_filter,get_triplets,get_qr_corners,draw_qr,get_center
 
 def load_image(filepath: str) -> np.ndarray:
     return ski.io.imread(filepath)
@@ -17,13 +19,13 @@ def histogram_equalization(im: np.ndarray) -> np.ndarray:
     )
     return (equalized * 255).astype(np.uint8)
 
-
 def grayscale(im: np.ndarray) -> np.ndarray:
     return (ski.color.rgb2gray(im) * 255).astype(np.uint8)
 
 
 def bin(im: np.ndarray) -> np.ndarray:
-    thresh = ski.filters.threshold_otsu(im)
+    block_size = 35
+    thresh = ski.filters.threshold_local(im,block_size,offset=10)
     return ((im > thresh) * 255).astype(np.uint8)
 
 
@@ -33,7 +35,7 @@ def preprocess(im: np.ndarray) -> np.ndarray:
     eqalized = histogram_equalization(im)
     gray = grayscale(eqalized)
     bin_im = bin(gray)
-    return bin_im
+    return eqalized, gray,bin_im
 
 
 def sobel(im: np.ndarray) -> np.ndarray:
@@ -89,9 +91,11 @@ def find_squares(im_original: np.ndarray, regions: np.ndarray) -> np.ndarray:
             continue
         if region.extent < 0.5:
             continue
-        minr, minc, maxr, maxc = region.bbox
-        if (abs(minc-maxc) - 10) <= abs(minr-maxr) and abs(minr-maxr) <= (abs(minc-maxc) + 10):
-            squares.append((minr, minc, maxr, maxc))
+        #minr, minc, maxr, maxc = region.bbox
+        #if (abs(minc-maxc) - 10) <= abs(minr-maxr) and abs(minr-maxr) <= (abs(minc-maxc) + 10):
+        #    squares.append((minr, minc, maxr, maxc))
+        squares.append(region.bbox)
+
     res = draw_squares(im_original, squares)
     # print(len(squares))
     return squares, res
@@ -131,23 +135,63 @@ def filter_qr_triplets(markers: list, max_distance: float = 500.0) -> list:
                 triplets.append((markers[i], markers[j], markers[k]))
     return triplets
 
+
+
+
+def save_debug(image_name: str, original: np.ndarray, equalized: np.ndarray, gray: np.ndarray,binary: np.ndarray,
+               denoise: np.ndarray,
+               labels: np.ndarray,
+               regions: list):
+
+    debug_dir = Path("../debug") / image_name
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    ski.io.imsave(debug_dir / "1_original.png", original)
+    ski.io.imsave(debug_dir / "2_equalized.png", equalized)
+    ski.io.imsave(debug_dir / "3_gray.png", gray)
+    ski.io.imsave(debug_dir / "4_binary.png", binary)
+    ski.io.imsave(debug_dir / "5_denoised.png", denoise)
+    overlay = ski.color.label2rgb(labels, bg_label=0)
+    overlay = (overlay * 255).astype(np.uint8)
+    ski.io.imsave(debug_dir / "6_labels.png", overlay)
+
+    bbox = original.copy()
+    element = []
+    for region in regions:
+        res, coords = square_filter(denoise,binary,region)
+        if res:
+            element.append({ "bbox": region.bbox, "corners": coords, "area": region.area})
+
+    triplets = get_triplets(element)
+    for triplet in triplets:
+        fourth = get_qr_corners(triplet)
+        bbox = draw_qr(bbox,fourth)
+
+    ski.io.imsave(debug_dir / "7_regions.png", bbox)
+
 def process_directory(image_path: str):
     im = load_image(image_path)
-    res = preprocess(im)
+    equalized, gray, binary= preprocess(im)
 
     ### square detection
-    res = denoising(res)
-    lab = labels(res)
+    denoise = denoising(binary)
+    lab = labels(denoise)
     regions = ski.measure.regionprops(lab)
-    # overlay, res = draw_regions(im, lab, regions)
-    squares, res_draw = find_squares(im, regions)
 
-    ### square verification
-    mark = verif_square(res, squares)
-    triplets = filter_qr_triplets(mark)
+    element = []
+    for region in regions:
+        res, coords = square_filter(denoise, binary, region)
+        if res:
+            element.append({"bbox": region.bbox, "corners": coords, "area": region.area})
+
+    triplets = get_triplets(element)
     print(f"{len(triplets)} QR code détectés")
-    valid_markers = list({m for triplet in triplets for m in triplet})
-    res = draw_squares(im, valid_markers)
+    res = im.copy()
+    qr_code = []
+    for triplet in triplets:
+        fourth = get_qr_corners(triplet)
+        qr_code.append(fourth)
+        res = draw_qr(res, fourth)
+    # valid_markers = list({m for triplet in triplets for m in triplet})
 
 
     output_dir = Path("results")
@@ -156,7 +200,8 @@ def process_directory(image_path: str):
     output_path = output_dir / f"{Path(image_path).stem}_res.png"
     save_image(str(output_path), res)
     # save_image("res.png", res_draw)
-    return valid_markers
+    #save_debug(Path(image_path).stem,im,equalized,gray,binary,denoise,lab,regions)
+    return qr_code
 
 def precision(tp: int, fp: int) -> float:
     if tp + fp:
@@ -294,6 +339,9 @@ groun_truh = {
         (325, 250, 395, 320)  # Marqueur Bas-Gauche
     ]
 }
+
+
+
 def main():
     data_dir = Path("../data")
 
@@ -302,7 +350,7 @@ def main():
             img_name = image_file.name
             print(f"\nTraitement de : {img_name}")
             predictions = process_directory(str(image_file))
-
+            """
             if img_name in groun_truh:
                 truth = groun_truh[img_name]
                 print(f"Évaluation par rapport à la vérité terrain ({len(truth)} attendu(s)) :")
@@ -312,6 +360,7 @@ def main():
                 # Optionnel : afficher aussi le score moyen de superposition (IoU)
                 miou = mean_iou(predictions, truth)
                 print(f"Mean IoU : {miou:.2f}")
+            """
     # process_directory("../data/Pastedimage.JPG")
 
 main()

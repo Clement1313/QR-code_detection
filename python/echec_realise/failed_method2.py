@@ -309,7 +309,7 @@ def process_directory(image_path: str):
     res = draw_squares(im, valid_markers)
 
 
-    output_dir = Path("../results")
+    output_dir = Path("")
     output_dir.mkdir(exist_ok=True)
 
     output_path = output_dir / f"{Path(image_path).stem}_res.png"
