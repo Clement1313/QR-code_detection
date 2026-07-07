@@ -176,12 +176,20 @@ def get_center(bbox):
     minr, minc, maxr, maxc = bbox
     return  np.array([(minr + maxr) / 2,(minc + maxc) / 2 ])
 
-def get_triplets(elements):
+def get_triplets(elements, max_distance = 600):
     triplets = []
     for m1, m2, m3 in combinations(elements, 3):
         if not similar_area(m1, m2, m3):
             continue
         centers = [ get_center(m1["bbox"]),get_center(m2["bbox"]),get_center(m3["bbox"])]
+
+        d01 = np.linalg.norm(centers[0] - centers[1])
+        d02 = np.linalg.norm(centers[0] - centers[2])
+        d12 = np.linalg.norm(centers[1] - centers[2])
+
+        if max(d01, d02, d12) > max_distance:
+            continue
+
         if   check_right_angle(centers): # check_distances(centers) and
             triplets.append((m1, m2, m3))
     return triplets
@@ -240,10 +248,12 @@ def draw_qr(image, qr_corners):
     img = image.copy()
     if img.shape[2] == 4:
         img = img[:, :, :3]
+    h, w = img.shape[:2]
     for i in range(4):
         p1 = qr_corners[i]
         p2 = qr_corners[(i+1)%4]
         rr, cc = ski.draw.line(int(p1[0]), int(p1[1]),int(p2[0]), int(p2[1]))
-        img[rr, cc] = [255,0,0]
+        mask = (rr >=0 ) & (rr < h) & (cc >= 0) & (cc < w)
+        img[rr[mask], cc[mask]] = [255,0,0]
 
     return img
