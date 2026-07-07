@@ -193,6 +193,7 @@ def process_directory(image_path: str):
         res = draw_qr(res, fourth)
     # valid_markers = list({m for triplet in triplets for m in triplet})
 
+    # save_debug("test", im, equalized, gray, binary, denoise, lab, regions)
 
     output_dir = Path("results")
     output_dir.mkdir(exist_ok=True)
@@ -363,4 +364,4 @@ def main():
             """
     # process_directory("../data/Pastedimage.JPG")
 
-main()
+# main()
