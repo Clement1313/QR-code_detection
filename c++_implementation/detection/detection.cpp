@@ -1,4 +1,4 @@
-#include "../image/detection.hh"
+#include "detection.hh"
 
 namespace qr_code {
 

@@ -1,7 +1,13 @@
+#define STB_IMAGE_IMPLEMENTATION
+#include "../external/stb_image.h"
+
 #include "image_io.hh"
 #include <iostream>
 #include <fstream>
+
 #include <cstdio>
+
+
 
 namespace image {
 
@@ -76,6 +82,24 @@ bool save_image(rgb24_image &image, const char *filename) {
   return true;
 }
 
+
+rgb24_image * load_image(const char* filename) {
+  int width, height, channels;
+  unsigned char *data = stbi_load(filename, &width, &height, &channels, 3);
+
+  if (!data) {
+    std::cerr << "ERROR: can not load " << filename << " (" << stbi_failure_reason() << ")\n";
+    return nullptr;
+  }
+
+  rgb24_image *image = new rgb24_image(width, height);
+  std::copy(data, data + image->length, image->pixels);
+
+  stbi_image_free(data);
+  return image;
+}
+
+/*
 rgb24_image *load_image(const char* filename) {
   tga_header header;
   rgb24_image *image;
@@ -124,5 +148,6 @@ rgb24_image *load_image(const char* filename) {
   input.close();
   return image;
 }
+*/
 
 }

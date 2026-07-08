@@ -16,6 +16,10 @@ class gray8_image {
 
   public:
             gray8_image(int sx, int sy);
+            gray8_image(const gray8_image& other);
+            gray8_image(gray8_image&& other) noexcept;
+            gray8_image& operator=(const gray8_image& other);
+            gray8_image& operator=(gray8_image&& other) noexcept;
             virtual ~gray8_image();
 
              const GRAY8& get_buffer() const;
@@ -34,6 +38,10 @@ class rgb24_image {
         public:
 
             rgb24_image(int sx, int sy);
+            rgb24_image(const rgb24_image& other);
+            rgb24_image(rgb24_image&& other) noexcept;
+            rgb24_image& operator=(const rgb24_image& other);
+            rgb24_image& operator=(rgb24_image&& other) noexcept;
             virtual ~rgb24_image();
             const RGB8& get_buffer() const;
             RGB8& get_buffer();
