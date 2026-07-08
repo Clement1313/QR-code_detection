@@ -1,3 +1,6 @@
 *.o
 *.JPG
 *.png
+data/Dataset/*
+python/__pycache__/*
+*.jpg
