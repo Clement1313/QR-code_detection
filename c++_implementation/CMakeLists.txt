@@ -3,5 +3,10 @@ project(QR_Code)
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(qrcode_detection main.cpp detection/detection.cpp detection/preprocess.cpp image/historigram.cpp image/image_io.cpp image/image.cpp)
+add_subdirectory(src)
+add_subdirectory(benchmark)
+
+add_executable(qrcode_detection src/main.cpp)
+
+target_link_libraries(qrcode_detection PRIVATE detection)
 

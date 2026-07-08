@@ -1,0 +1,153 @@
+#define STB_IMAGE_IMPLEMENTATION
+#include "external/stb_image.h"
+
+#include "util/image_io.hh"
+#include <fstream>
+#include <iostream>
+
+#include <cstdio>
+
+
+
+namespace image {
+
+struct struct_tga_header {
+  uint8_t idl_length;      // nombre de bits du champs d'identification de l'image  commençant au bit 12h
+  uint8_t color_map_type;  // 01h indique si le fichier TGA contient une palette  (contient 1 si c'est le cas , 0 sinon)
+  uint8_t image_type;      // 02h contient le code du type de l'image contenue dans le fichier TGA
+  uint16_t cmap_start;     // 03h defini la position de la premiére entrée de la colormap
+  uint16_t cmap_length;    // 05h nombre d'éléments de la colormap
+  uint8_t cmap_depth;      // 07h nombre de bits de chaque entrée de la colormap
+  uint16_t x_offset;       // 08h abscisse X de l' image
+  uint16_t y_offset;       // 0Ah ordonnée Y de l' image
+  uint16_t width;          // 0Ch Largeur de l'image en pixels
+  uint16_t height;         // 0Eh Hauteur de l'image en pixels
+  uint8_t pixel_depth;     // 10h nombre de bits par pixel
+  uint8_t image_descriptor_alpha_channel_bits:4; // 11h  contient 8 bits servant a décrire l'image
+  uint8_t image_descriptor_image_origin:2;
+  uint8_t image_descriptor_unused:2;
+}__attribute__ ((packed));
+
+
+typedef struct struct_tga_header tga_header;
+
+tga_header new_tga_header(int width, int height) {
+  tga_header header;
+  header.idl_length=0;        // nombre de bits du champs d'identification de l'image  commençant au bit 12h
+  header.color_map_type=0;    // 01h indique si le fichier TGA contient une palette  (contient 1 si c'est le cas , 0 sinon)
+  header.image_type=2;        // 02h contient le code du type de l'image contenue dans le fichier TGA
+  header.cmap_start=0;        // 03h defini la position de la premiére entrée de la colormap
+  header.cmap_length=0;       // 05h nombre d'éléments de la colormap
+  header.cmap_depth=0;        // 07h nombre de bits de chaque entrée de la colormap
+  header.x_offset=0;          // 08h abscisse X de l' image
+  header.y_offset=0;          // 0Ah ordonnée Y de l' image
+  header.width=width;     // 0Ch Largeur de l'image en pixels
+  header.height=height;    // 0Eh Hauteur de l'image en pixels
+  header.pixel_depth=24;      // 10h nombre de bits par pixel
+                              // 11h  contient 8 bits servant a décrire l'image
+  header.image_descriptor_unused= 0;
+  header.image_descriptor_image_origin = 0;
+  header.image_descriptor_alpha_channel_bits = 0;
+  return header;
+}
+
+
+
+bool save_image(rgb24_image &image, const char *filename) {
+  tga_header header = new_tga_header(image.sx, image.sy);
+  uint8_t *buffer_bgr;
+  //FILE *f = fopen(filename, "w");
+  std::ofstream outfile (filename,std::ofstream::binary);
+  // if (f==0) {
+  if (!outfile.is_open()) {
+    std::cerr << "ERROR: can not open " << filename << " for writing!\n";
+    return false;
+  }
+
+  outfile.write((char *)(&header), sizeof(tga_header));
+  //fwrite(&header, sizeof(tga_header), 1, f);
+
+  buffer_bgr = new uint8_t[image.length];
+  for(std::size_t i = 0 ; i < image.length ; i+=3) {//rgb2bgr
+    buffer_bgr[i] = image.pixels[i+2];
+    buffer_bgr[i+1] = image.pixels[i+1];
+    buffer_bgr[i+2] = image.pixels[i];
+  }
+  //fwrite(buffer_bgr, 1, image.length, f);
+  outfile.write((char *)(buffer_bgr), image.length);
+  delete [] buffer_bgr;
+
+  //fclose(f);
+  outfile.close();
+  return true;
+}
+
+
+rgb24_image * load_image(const char* filename) {
+  int width, height, channels;
+  unsigned char *data = stbi_load(filename, &width, &height, &channels, 3);
+
+  if (!data) {
+    std::cerr << "ERROR: can not load " << filename << " (" << stbi_failure_reason() << ")\n";
+    return nullptr;
+  }
+
+  rgb24_image *image = new rgb24_image(width, height);
+  std::copy(data, data + image->length, image->pixels);
+
+  stbi_image_free(data);
+  return image;
+}
+
+/*
+rgb24_image *load_image(const char* filename) {
+  tga_header header;
+  rgb24_image *image;
+  uint8_t *buffer_bgr;
+  //FILE *f = fopen(filename, "r");
+  std::ifstream input (filename,std::ofstream::binary);
+  //if (f==0) {
+  if (!input.is_open()) {
+    std::cerr << "ERROR: can not open " << filename << " for reading!\n";
+    return 0;
+  }
+
+  input.read((char*)&header, sizeof(tga_header));
+  if (!input) {
+  //if (fread(&header, sizeof(tga_header), 1, f)!=1) {
+    std::cerr << "ERROR: can not read " << filename << "!\n";
+    input.close();
+    return 0;
+  }
+
+  if (header.pixel_depth!=24) {
+    std::cerr << "ERROR: Wrong image format (not 24bits)!\n";
+    input.close();
+    return 0;
+  }
+
+  image = new rgb24_image(header.width, header.height);
+
+  buffer_bgr = new uint8_t[image->length];
+  input.read((char*)buffer_bgr, image->length);
+  if (!input) {
+  //if (fread(buffer_bgr, 1, image->length, f)!=(unsigned)image->length) {
+    std::cerr << "ERROR: can not read image data!\n";
+    delete image;
+    input.close();
+    return 0;
+  }
+  for(std::size_t i = 0 ; i < image->length ; i+=3) {//bgr2rgb
+    image->pixels[i] = buffer_bgr[i+2];
+    image->pixels[i+1] = buffer_bgr[i+1];
+    image->pixels[i+2] = buffer_bgr[i];
+  }
+  delete [] buffer_bgr;
+
+  //fclose(f);
+  input.close();
+  return image;
+}
+*/
+
+}
