@@ -310,55 +310,6 @@ def get_result(valid_makers,ground_truth):
     print("F1 :", f)
 
 
-# Vérité terrain pour l'évaluation (3 marqueurs par QR code attendus)
-groun_truh = {
-    # 1. Image de l'écran de PC (QR code en bas à droite de l'écran)
-    "IMG_3888.JPG": [
-        (2910, 2110, 2990, 2190),  # Marqueur Haut-Gauche
-        (2915, 2240, 2995, 2320),  # Marqueur Haut-Droite
-        (3040, 2115, 3120, 2195)  # Marqueur Bas-Gauche
-    ],
-
-    # 2. Image du PC portable de face (Sticker QR sur la table à gauche)
-    "IMG_3889.JPG": [
-        (2210, 170, 2320, 280),  # Marqueur Haut-Gauche
-        (2110, 310, 2220, 420),  # Marqueur Haut-Droite
-        (2390, 315, 2500, 425)  # Marqueur Bas-Gauche
-    ],
-
-    # 3. Image du PC vue du dessus (Sticker QR plus proche et droit)
-    "IMG_3890.JPG": [
-        (1910, 380, 2030, 500),  # Marqueur Haut-Gauche
-        (1915, 730, 2035, 850),  # Marqueur Haut-Droite
-        (2250, 375, 2370, 495)  # Marqueur Bas-Gauche
-    ],
-
-    "IMG_3891.JPG": [
-        (2040, 790, 2150, 900),  # Marqueur Haut-Gauche (vu incliné)
-        (1880, 1070, 1990, 1180),  # Marqueur Haut-Droite
-        (2210, 1140, 2320, 1250)  # Marqueur Bas-Gauche
-    ],
-
-    "IMG_3892.JPG": [
-        (2110, 1720, 2240, 1850),  # Marqueur Haut-Gauche
-        (2120, 2220, 2250, 2350),  # Marqueur Haut-Droite
-        (2510, 1740, 2640, 1870)  # Marqueur Bas-Gauche
-    ],
-
-    "IMG_3895.JPG": [
-        (1610, 1110, 1790, 1290),  # Marqueur Haut-Gauche (boîte englobante large due à l'angle)
-        (1350, 1700, 1530, 1880),  # Marqueur Haut-Droite
-        (2020, 1430, 2200, 1610)  # Marqueur Bas-Gauche
-    ],
-
-    "Pastedimage.JPG": [
-        (220, 140, 290, 210),  # Marqueur Haut-Gauche
-        (90, 245, 160, 315),  # Marqueur Haut-Droite
-        (325, 250, 395, 320)  # Marqueur Bas-Gauche
-    ]
-}
-
-
 
 def main():
     data_dir = Path("../data")

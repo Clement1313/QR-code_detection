@@ -144,9 +144,22 @@ def order_points(coords):
     angles = np.arctan2(coords[:, 0] - center[0], coords[:, 1] - center[1])
     return coords[np.argsort(angles)]
 
+def check_region_shape(region, min_solidity=0.7, max_eccentricity=0.6, min_axis_ratio=0.5):
+    #if region.solidity < min_solidity:
+    #    return False
+    if region.eccentricity > max_eccentricity:
+        return False
+    #if region.axis_minor_length == 0:
+    #    return False
+    #axis_ratio = region.axis_minor_length / region.axis_major_length
+    #if axis_ratio < min_axis_ratio:
+    #    return False
+    return True
+
 def square_filter(denoise:np.ndarray,binary:np.ndarray, region: object)->(bool,np.ndarray):
     if region.area < 50:
         return False,np.empty((0,2))
+
     minr, minc, maxr, maxc = region.bbox
     square1 = denoise[minr:maxr, minc:maxc]
     square2 = binary[minr:maxr, minc:maxc]
@@ -164,6 +177,8 @@ def square_filter(denoise:np.ndarray,binary:np.ndarray, region: object)->(bool,n
     if coords is None:
         return False,np.empty((0,2))
     coords = order_points(coords)
+    if not check_region_shape(region):
+        return False, np.empty((0, 2))
     return check_form(coords), coords
 
 
@@ -197,7 +212,16 @@ def get_center(bbox):
     minr, minc, maxr, maxc = bbox
     return  np.array([(minr + maxr) / 2,(minc + maxc) / 2 ])
 
-def get_triplet_score(centers):
+
+def marker_size_from_corners(element):
+    corners = element["corners"]
+    if corners is None or len(corners) != 4:
+        return None
+    sides = [np.linalg.norm(corners[i] - corners[(i + 1) % 4]) for i in range(4)]
+    return np.mean(sides)
+
+
+def get_triplet_score(centers,elements):
     A,B,C = centers
     angles = [angle(B, A, C), angle(A, B, C), angle(A, C, B)]
     idx = np.argmin(np.abs(np.array(angles) - 90))
@@ -209,11 +233,16 @@ def get_triplet_score(centers):
         np.linalg.norm(B - C),
     ])
     side1, side2, diag = d
+
+    sizes = [marker_size_from_corners(e) for e in elements]
     side_dev = abs(side1 - side2) / max(side1, side2)
     expected_diag = np.sqrt(2) * (side1 + side2) / 2
     diag_dev = abs(diag - expected_diag) / diag
-
-    return right_angle_dev + side_dev + diag_dev
+    if all(s is not None for s in sizes):
+        size_dev = (max(sizes) - min(sizes)) / max(sizes)
+    else:
+        size_dev = 0
+    return right_angle_dev + side_dev + diag_dev + size_dev
 
 
 def estimate_max_distance(elements,image_shape, factor=8):
@@ -334,7 +363,7 @@ def get_triplets(elements,image_shape, max_distance = None,angle_tolerance=35):
         idx = np.argmin(np.abs(np.array(angles) - 90))
         if abs(angles[idx] - 90) > angle_tolerance:
             continue
-        score = get_triplet_score(centers)
+        score = get_triplet_score(centers,(m1,m2,m3))
         candidates.append((score, (i, j, k), (m1, m2, m3)))
     candidates.sort(key=lambda c: c[0])
 

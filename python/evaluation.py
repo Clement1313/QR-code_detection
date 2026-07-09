@@ -219,5 +219,5 @@ def evaluate_folder(folder_path: str, iou_threshold: float = 0.5, verbose: bool 
 
 
 if __name__ == "__main__":
-    DATASET_FOLDER = "../data/Dataset/detection/perspective"
+    DATASET_FOLDER = "../data/Dataset/detection/monitor"
     evaluate_folder(DATASET_FOLDER, iou_threshold=0.5, verbose=True)
