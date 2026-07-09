@@ -1,6 +1,7 @@
 *.o
 *.JPG
 *.png
-data/Dataset/*
-python/__pycache__/*
-*.jpg
+data/
+__pycache__
+*.tga
+c++_implementation/build
