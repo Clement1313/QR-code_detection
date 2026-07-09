@@ -2,11 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <vector>
 #include <thread>
+#include <vector>
 
-
-#include "util/historigram.hh"
+#include "util/histogram.hh"
 #include "util/image_io.hh"
 namespace qr_code
 {
@@ -99,7 +98,6 @@ namespace qr_code
         return round(static_cast<float>(result)
                      / static_cast<float>(blocksize * blocksize));
     }
-
 
     std::vector<int64_t> build_integral_image(const image::gray8_image& image)
     {
@@ -286,6 +284,36 @@ namespace qr_code
         image::gray8_image save{ input.sx, input.sy };
         closing(input, save, radius);
         opening(save, result, radius);
+    }
+
+    void median(const image::gray8_image& input, image::gray8_image& result,
+                int radius)
+    {
+        int w = input.sx, h = input.sy;
+        int window_size = (2 * radius + 1) * (2 * radius + 1);
+        std::vector<uint8_t> window(window_size);
+        const uint8_t* buf = input.get_buffer();
+
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                int i = 0;
+                for (int dy = -radius; dy <= radius; dy++)
+                {
+                    int yy = std::clamp(y + dy, 0, h - 1);
+                    for (int dx = -radius; dx <= radius; dx++)
+                    {
+                        int xx = std::clamp(x + dx, 0, w - 1);
+                        window[i++] = buf[yy * w + xx];
+                    }
+                }
+                std::nth_element(window.begin(),
+                                 window.begin() + window_size / 2,
+                                 window.end());
+                result.get_buffer()[y * w + x] = window[window_size / 2];
+            }
+        }
     }
 
     std::shared_ptr<Preprocess> preprocess(const image::rgb24_image& image)
