@@ -1,5 +1,5 @@
-#ifndef QR_CODE_DETECTION_HISTORIGRAM_HH
-#define QR_CODE_DETECTION_HISTORIGRAM_HH
+#ifndef QR_CODE_DETECTION_HISTOGRAM_HH
+#define QR_CODE_DETECTION_HISTOGRAM_HH
 #include "image.hh"
 
 namespace qr_code {
@@ -25,4 +25,4 @@ typedef struct { unsigned int histogram[IMAGE_NB_LEVELS]; } histogram_1d;
     void  egalisation_histogram(image::gray8_image& gray_image);
 
 }
-#endif // QR_CODE_DETECTION_HISTORIGRAM_HH
+#endif // QR_CODE_DETECTION_HISTOGRAM_HH

@@ -1,4 +1,4 @@
-#include "util/historigram.hh"
+#include "util/histogram.hh"
 #include <algorithm>
 #include <array>
 #include <math.h>
