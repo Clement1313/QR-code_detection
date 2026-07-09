@@ -9,14 +9,14 @@ typedef struct { unsigned int histogram[IMAGE_NB_LEVELS]; } histogram_1d;
       Signature : histogram: (tifo::gray8_image) -> histogram_1d
       Description: réalise un histogramme d'une image grise
     */
-    histogram_1d histogram(image::gray8_image& gray_image);
+    histogram_1d histogram(const image::gray8_image& gray_image);
 
 
     /*
       Signature: histogram_accumule: (tifo::gray8_imrage) -> histogram_1d
       Description: retourne l'histogram accumulée
     */
-    histogram_1d histogram_accumule(image::gray8_image& gray_image);
+    histogram_1d histogram_accumule(const image::gray8_image& gray_image);
 
     /*
       Signature: egalisation_histogram: (tifo::gray8_imrage) -> void
