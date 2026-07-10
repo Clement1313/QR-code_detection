@@ -60,8 +60,7 @@ namespace qr_code
     std::vector<Region> regionprops(const LabelImage& lab);
 
     bool square_filter(const image::gray8_image& denoise,
-                        const image::gray8_image& binary,
-                        const Region& region,
+                       const image::gray8_image& binary, const Region& region,
                         std::vector<Point>& corners_out);
 
     std::vector<Triplet> get_triplets(const std::vector<Element>& elements,
@@ -74,5 +73,7 @@ namespace qr_code
     filter_contained_triplets(const std::vector<Triplet>& triplets,
                               double size_tolerance = 0.9,
                               double overlap_threshold = 0.8);
+
+    void draw_qr(image::rgb24_image& image, const std::vector<Point>& corners);
 
 } // namespace qr_code

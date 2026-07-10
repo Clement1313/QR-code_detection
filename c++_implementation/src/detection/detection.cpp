@@ -421,4 +421,17 @@ namespace qr_code
         return result;
     }
 
+    void draw_qr(image::rgb24_image& image, const std::vector<Point>& corners)
+    {
+        if (corners.size() != 4)
+            return;
+        for (int i = 0; i < 4; i++)
+        {
+            const Point& p1 = corners[i];
+            const Point& p2 = corners[(i + 1) % 4];
+            draw_line(image, static_cast<int>(p1.row), static_cast<int>(p1.col),
+                      static_cast<int>(p2.row), static_cast<int>(p2.col));
+        }
+    }
+
 } // namespace qr_code
