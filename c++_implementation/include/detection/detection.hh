@@ -36,8 +36,7 @@ namespace qr_code
         int label;
         std::array<int, 4> bbox;
         long area;
-        std::vector<std::pair<int, int>>
-            coords;
+        std::vector<std::pair<int, int>> coords;
         double eccentricity;
     };
 
@@ -61,7 +60,7 @@ namespace qr_code
 
     bool square_filter(const image::gray8_image& denoise,
                        const image::gray8_image& binary, const Region& region,
-                        std::vector<Point>& corners_out);
+                       std::vector<Point>& corners_out);
 
     std::vector<Triplet> get_triplets(const std::vector<Element>& elements,
                                       int image_sx, int image_sy,
@@ -73,6 +72,8 @@ namespace qr_code
     filter_contained_triplets(const std::vector<Triplet>& triplets,
                               double size_tolerance = 0.9,
                               double overlap_threshold = 0.8);
+
+    Point get_center(const std::array<int, 4>& bbox);
 
     void draw_qr(image::rgb24_image& image, const std::vector<Point>& corners);
 

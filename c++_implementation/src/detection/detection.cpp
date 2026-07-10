@@ -7,10 +7,434 @@
 
 namespace qr_code
 {
-
     namespace
     {
         constexpr double kPi = 3.14159265358979323846;
+
+        LabelImage label_image(const image::gray8_image& image,
+                               int connectivity)
+        {
+            int w = image.sx, h = image.sy;
+            LabelImage result{
+                w, h, std::vector<int32_t>(static_cast<size_t>(w) * h, 0)
+            };
+            const uint8_t* buf = image.get_buffer();
+
+            static const int n4y[] = { -1, 1, 0, 0 };
+            static const int n4x[] = { 0, 0, -1, 1 };
+            static const int n8y[] = { -1, 1, 0, 0, -1, -1, 1, 1 };
+            static const int n8x[] = { 0, 0, -1, 1, -1, 1, -1, 1 };
+
+            const int* ny = (connectivity == 8) ? n8y : n4y;
+            const int* nx = (connectivity == 8) ? n8x : n4x;
+            int n_neighbors = (connectivity == 8) ? 8 : 4;
+
+            int32_t current_label = 0;
+            std::vector<std::pair<int, int>> stack;
+
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    if (buf[y * w + x] == 0 || result.at(x, y) != 0)
+                        continue;
+
+                    current_label++;
+                    stack.clear();
+                    stack.push_back({ x, y });
+                    result.at(x, y) = current_label;
+
+                    while (!stack.empty())
+                    {
+                        auto [cx, cy] = stack.back();
+                        stack.pop_back();
+
+                        for (int k = 0; k < n_neighbors; k++)
+                        {
+                            int nnx = cx + nx[k], nny = cy + ny[k];
+                            if (nnx < 0 || nnx >= w || nny < 0 || nny >= h)
+                                continue;
+                            if (buf[nny * w + nnx] == 0)
+                                continue;
+                            if (result.at(nnx, nny) != 0)
+                                continue;
+                            result.at(nnx, nny) = current_label;
+                            stack.push_back({ nnx, nny });
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
+        image::gray8_image crop_image(const image::gray8_image& src,
+                                      const std::array<int, 4>& bbox)
+        {
+            int minr = bbox[0], minc = bbox[1], maxr = bbox[2], maxc = bbox[3];
+            int h = std::max(0, maxr - minr);
+            int w = std::max(0, maxc - minc);
+            image::gray8_image out{ std::max(1, w), std::max(1, h) };
+
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                    out.get_buffer()[y * out.sx + x] =
+                        src.get_buffer()[(minr + y) * src.sx + (minc + x)];
+
+            return out;
+        }
+
+        image::gray8_image get_inner_square(const image::gray8_image& square)
+        {
+            LabelImage lab =
+                label_image(square, 8); // connexité par défaut skimage
+            std::vector<Region> regions = regionprops(lab);
+
+            image::gray8_image mask{ square.sx, square.sy };
+            std::fill(mask.get_buffer(),
+                      mask.get_buffer() + square.sx * square.sy, 0);
+
+            if (regions.empty())
+                return mask;
+
+            const Region* best = &regions[0];
+            for (const Region& r : regions)
+                if (r.area > best->area)
+                    best = &r;
+
+            for (const auto& [row, col] : best->coords)
+                mask.get_buffer()[row * square.sx + col] = 255;
+
+            return mask;
+        }
+
+        bool is_foreground(const image::gray8_image& mask, int y, int x)
+        {
+            if (x < 0 || x >= mask.sx || y < 0 || y >= mask.sy)
+                return false;
+            return mask.get_buffer()[y * mask.sx + x] != 0;
+        }
+
+        std::vector<Point> trace_boundary(const image::gray8_image& mask)
+        {
+            static const int off_dy[8] = { -1, -1, 0, 1, 1, 1, 0, -1 };
+            static const int off_dx[8] = { 0, 1, 1, 1, 0, -1, -1, -1 };
+
+            auto find_offset_index = [](int dy, int dx) {
+                for (int i = 0; i < 8; i++)
+                    if (off_dy[i] == dy && off_dx[i] == dx)
+                        return i;
+                return 0;
+            };
+
+            std::vector<Point> boundary;
+            int start_y = -1, start_x = -1;
+            for (int y = 0; y < mask.sy && start_y < 0; y++)
+                for (int x = 0; x < mask.sx; x++)
+                    if (is_foreground(mask, y, x))
+                    {
+                        start_y = y;
+                        start_x = x;
+                        break;
+                    }
+
+            if (start_y < 0)
+                return boundary;
+
+            int cur_y = start_y, cur_x = start_x;
+            int back_y = cur_y, back_x = cur_x - 1;
+
+            bool has_neighbor = false;
+            for (int i = 0; i < 8; i++)
+                if (is_foreground(mask, cur_y + off_dy[i], cur_x + off_dx[i]))
+                {
+                    has_neighbor = true;
+                    break;
+                }
+
+            boundary.push_back(
+                { static_cast<double>(cur_y), static_cast<double>(cur_x) });
+
+            if (!has_neighbor)
+                return boundary; // pixel isolé
+
+            int first_y = cur_y, first_x = cur_x;
+            size_t max_iter = static_cast<size_t>(mask.sx) * mask.sy * 8 + 8;
+
+            for (size_t iter = 0; iter < max_iter; iter++)
+            {
+                int idx = find_offset_index(back_y - cur_y, back_x - cur_x);
+
+                int found_y = -1, found_x = -1;
+                int last_bg_y = back_y, last_bg_x = back_x;
+
+                for (int s = 1; s <= 8; s++)
+                {
+                    int k = (idx + s) % 8;
+                    int ny = cur_y + off_dy[k], nx = cur_x + off_dx[k];
+                    if (is_foreground(mask, ny, nx))
+                    {
+                        found_y = ny;
+                        found_x = nx;
+                        break;
+                    }
+                    last_bg_y = ny;
+                    last_bg_x = nx;
+                }
+
+                if (found_y < 0)
+                    break;
+
+                cur_y = found_y;
+                cur_x = found_x;
+                back_y = last_bg_y;
+                back_x = last_bg_x;
+
+                if (cur_y == first_y && cur_x == first_x)
+                    break;
+
+                boundary.push_back(
+                    { static_cast<double>(cur_y), static_cast<double>(cur_x) });
+            }
+
+            return boundary;
+        }
+
+        double perpendicular_distance(const Point& p, const Point& a,
+                                      const Point& b)
+        {
+            double dy = b.row - a.row, dx = b.col - a.col;
+            double norm = std::hypot(dy, dx);
+            if (norm == 0.0)
+                return std::hypot(p.row - a.row, p.col - a.col);
+            double num = std::abs(dy * (p.col - a.col) - dx * (p.row - a.row));
+            return num / norm;
+        }
+
+        std::vector<Point> douglas_peucker(const std::vector<Point>& points,
+                                           double tolerance)
+        {
+            if (points.size() < 3)
+                return points;
+
+            double max_dist = 0.0;
+            size_t index = 0;
+            for (size_t i = 1; i + 1 < points.size(); i++)
+            {
+                double d = perpendicular_distance(points[i], points.front(),
+                                                  points.back());
+                if (d > max_dist)
+                {
+                    max_dist = d;
+                    index = i;
+                }
+            }
+
+            if (max_dist > tolerance)
+            {
+                std::vector<Point> left(points.begin(),
+                                        points.begin() + index + 1);
+                std::vector<Point> right(points.begin() + index, points.end());
+                std::vector<Point> res_left = douglas_peucker(left, tolerance);
+                std::vector<Point> res_right =
+                    douglas_peucker(right, tolerance);
+                res_left.pop_back();
+                res_left.insert(res_left.end(), res_right.begin(),
+                                res_right.end());
+                return res_left;
+            }
+            return { points.front(), points.back() };
+        }
+
+        std::vector<Point> get_corner(const image::gray8_image& mask)
+        {
+            std::vector<Point> contour = trace_boundary(mask);
+            if (contour.empty())
+                return {};
+
+            std::vector<Point> poly = douglas_peucker(contour, 6.0);
+            if (poly.size() >= 2)
+            {
+                const Point& first = poly.front();
+                const Point& last = poly.back();
+                if (std::abs(first.row - last.row) < 1e-6
+                    && std::abs(first.col - last.col) < 1e-6)
+                    poly.pop_back();
+            }
+            return poly;
+        }
+
+        std::vector<Point> convex_hull(std::vector<Point> pts)
+        {
+            if (pts.size() < 3)
+                return pts;
+
+            std::sort(pts.begin(), pts.end(),
+                      [](const Point& a, const Point& b) {
+                          if (a.row != b.row)
+                              return a.row < b.row;
+                          return a.col < b.col;
+                      });
+            pts.erase(std::unique(pts.begin(), pts.end(),
+                                  [](const Point& a, const Point& b) {
+                                      return std::abs(a.row - b.row) < 1e-9
+                                          && std::abs(a.col - b.col) < 1e-9;
+                                  }),
+                      pts.end());
+            if (pts.size() < 3)
+                return pts;
+
+            auto cross = [](const Point& o, const Point& a, const Point& b) {
+                return (a.col - o.col) * (b.row - o.row)
+                    - (a.row - o.row) * (b.col - o.col);
+            };
+
+            std::vector<Point> hull(2 * pts.size());
+            int k = 0;
+            for (size_t i = 0; i < pts.size(); i++)
+            {
+                while (k >= 2 && cross(hull[k - 2], hull[k - 1], pts[i]) <= 0)
+                    k--;
+                hull[k++] = pts[i];
+            }
+            int lower = k + 1;
+            for (int i = static_cast<int>(pts.size()) - 2; i >= 0; i--)
+            {
+                while (k >= lower
+                       && cross(hull[k - 2], hull[k - 1], pts[i]) <= 0)
+                    k--;
+                hull[k++] = pts[i];
+            }
+            hull.resize(k - 1);
+            return hull;
+        }
+
+        std::vector<Point> order_points(const std::vector<Point>& coords)
+        {
+            if (coords.empty())
+                return coords;
+
+            double mean_row = 0, mean_col = 0;
+            for (const Point& p : coords)
+            {
+                mean_row += p.row;
+                mean_col += p.col;
+            }
+            mean_row /= coords.size();
+            mean_col /= coords.size();
+
+            std::vector<Point> sorted_coords = coords;
+            std::sort(sorted_coords.begin(), sorted_coords.end(),
+                      [&](const Point& a, const Point& b) {
+                          double angle_a =
+                              std::atan2(a.row - mean_row, a.col - mean_col);
+                          double angle_b =
+                              std::atan2(b.row - mean_row, b.col - mean_col);
+                          return angle_a < angle_b;
+                      });
+            return sorted_coords;
+        }
+
+        std::vector<Point> get_four_coord(std::vector<Point> coords)
+        {
+            if (coords.size() < 4)
+                return coords;
+
+            if (coords.size() > 4)
+            {
+                std::vector<Point> hull = convex_hull(coords);
+                if (hull.size() >= 3)
+                    coords = hull;
+            }
+
+            if (coords.size() == 4)
+                return order_points(coords);
+
+            size_t n = coords.size();
+            if (n < 4)
+                return {};
+
+            std::vector<Point> best;
+            double best_score = std::numeric_limits<double>::infinity();
+
+            std::vector<bool> mask(n, false);
+            std::fill(mask.end() - 4, mask.end(), true);
+            do
+            {
+                std::vector<Point> subset;
+                for (size_t i = 0; i < n; i++)
+                    if (mask[i])
+                        subset.push_back(coords[i]);
+
+                std::vector<Point> ordered = order_points(subset);
+                double sides[4];
+                for (int i = 0; i < 4; i++)
+                    sides[i] =
+                        std::hypot(ordered[i].row - ordered[(i + 1) % 4].row,
+                                   ordered[i].col - ordered[(i + 1) % 4].col);
+
+                double diag1 = std::hypot(ordered[0].row - ordered[2].row,
+                                          ordered[0].col - ordered[2].col);
+                double diag2 = std::hypot(ordered[1].row - ordered[3].row,
+                                          ordered[1].col - ordered[3].col);
+
+                double mean_side =
+                    (sides[0] + sides[1] + sides[2] + sides[3]) / 4.0;
+                double var = 0;
+                for (double s : sides)
+                    var += (s - mean_side) * (s - mean_side);
+                double score = std::sqrt(var / 4.0) + std::abs(diag1 - diag2);
+
+                if (score < best_score)
+                {
+                    best_score = score;
+                    best = ordered;
+                }
+            } while (std::next_permutation(mask.begin(), mask.end()));
+
+            return best;
+        }
+
+        bool is_convex_quad(const std::vector<Point>& coords)
+        {
+            int sum_signs = 0;
+            for (int i = 0; i < 4; i++)
+            {
+                const Point& p0 = coords[(i + 3) % 4];
+                const Point& p1 = coords[i];
+                const Point& p2 = coords[(i + 1) % 4];
+                double v1_row = p1.row - p0.row, v1_col = p1.col - p0.col;
+                double v2_row = p2.row - p1.row, v2_col = p2.col - p1.col;
+                double cross = v1_row * v2_col - v1_col * v2_row;
+                sum_signs += (cross > 0) - (cross < 0);
+            }
+            return std::abs(sum_signs) == 4;
+        }
+
+        bool check_side_ratio(const std::vector<Point>& coords,
+                              double min_ratio = 0.35)
+        {
+            double sides[4];
+            for (int i = 0; i < 4; i++)
+                sides[i] = std::hypot(coords[i].row - coords[(i + 1) % 4].row,
+                                      coords[i].col - coords[(i + 1) % 4].col);
+            double mn = *std::min_element(sides, sides + 4);
+            double mx = *std::max_element(sides, sides + 4);
+            if (mx == 0.0)
+                return false;
+            return (mn / mx) >= min_ratio;
+        }
+
+        bool check_form(const std::vector<Point>& coords)
+        {
+            return coords.size() == 4 && is_convex_quad(coords)
+                && check_side_ratio(coords);
+        }
+
+        bool check_region_shape(const Region& region,
+                                double max_eccentricity = 0.6)
+        {
+            return region.eccentricity <= max_eccentricity;
+        }
 
         double angle(const Point& a, const Point& b, const Point& c)
         {
@@ -28,7 +452,7 @@ namespace qr_code
                 std::clamp(ba_row * bc_row + ba_col * bc_col, -1.0, 1.0);
             return std::acos(dot) * 180.0 / kPi;
         }
-        
+
         bool check_area(long a1, long a2, double ratio = 1.6)
         {
             if (a1 <= 0 || a2 <= 0)
@@ -38,7 +462,8 @@ namespace qr_code
             return (mx / mn) < ratio;
         }
 
-        bool similar_area(const Element& m1, const Element& m2, const Element& m3)
+        bool similar_area(const Element& m1, const Element& m2,
+                          const Element& m3)
         {
             return check_area(m1.area, m2.area) && check_area(m1.area, m3.area)
                 && check_area(m2.area, m3.area);
@@ -229,7 +654,173 @@ namespace qr_code
             return overlap_ratio >= overlap_threshold;
         }
 
+        void draw_line(image::rgb24_image& image, int r0, int c0, int r1,
+                       int c1)
+        {
+            int dr = std::abs(r1 - r0), dc = std::abs(c1 - c0);
+            int sr = (r0 < r1) ? 1 : -1;
+            int sc = (c0 < c1) ? 1 : -1;
+            int err = dr - dc;
+            int r = r0, c = c0;
+
+            while (true)
+            {
+                if (r >= 0 && r < image.sy && c >= 0 && c < image.sx)
+                {
+                    int off = (r * image.sx + c) * 3;
+                    image.get_buffer()[off] = 255;
+                    image.get_buffer()[off + 1] = 0;
+                    image.get_buffer()[off + 2] = 0;
+                }
+                if (r == r1 && c == c1)
+                    break;
+                int e2 = 2 * err;
+                if (e2 > -dc)
+                {
+                    err -= dc;
+                    r += sr;
+                }
+                if (e2 < dr)
+                {
+                    err += dr;
+                    c += sc;
+                }
+            }
+        }
+
     } // namespace
+
+    LabelImage labels(const image::gray8_image& denoise)
+    {
+        return label_image(denoise, 4);
+    }
+
+    std::vector<Region> regionprops(const LabelImage& lab)
+    {
+        int max_label = 0;
+        for (int32_t v : lab.data)
+            max_label = std::max(max_label, static_cast<int>(v));
+        if (max_label == 0)
+            return {};
+
+        struct Accum
+        {
+            int minr = std::numeric_limits<int>::max();
+            int minc = std::numeric_limits<int>::max();
+            int maxr = std::numeric_limits<int>::min();
+            int maxc = std::numeric_limits<int>::min();
+            long area = 0;
+            double sum_r = 0, sum_c = 0;
+            std::vector<std::pair<int, int>> coords;
+        };
+
+        std::vector<Accum> accums(max_label + 1);
+
+        for (int y = 0; y < lab.sy; y++)
+        {
+            for (int x = 0; x < lab.sx; x++)
+            {
+                int32_t l = lab.at(x, y);
+                if (l == 0)
+                    continue;
+                Accum& a = accums[l];
+                a.minr = std::min(a.minr, y);
+                a.maxr = std::max(a.maxr, y);
+                a.minc = std::min(a.minc, x);
+                a.maxc = std::max(a.maxc, x);
+                a.area++;
+                a.sum_r += y;
+                a.sum_c += x;
+                a.coords.push_back({ y, x });
+            }
+        }
+
+        std::vector<Region> regions;
+        for (int l = 1; l <= max_label; l++)
+        {
+            Accum& a = accums[l];
+            if (a.area == 0)
+                continue;
+
+            double mean_r = a.sum_r / a.area;
+            double mean_c = a.sum_c / a.area;
+
+            double mu20 = 0, mu02 = 0, mu11 = 0;
+            for (const auto& [row, col] : a.coords)
+            {
+                double dr = row - mean_r;
+                double dc = col - mean_c;
+                mu20 += dr * dr;
+                mu02 += dc * dc;
+                mu11 += dr * dc;
+            }
+            mu20 /= a.area;
+            mu02 /= a.area;
+            mu11 /= a.area;
+
+            double common = std::sqrt(
+                std::max(0.0, (mu20 - mu02) * (mu20 - mu02) + 4 * mu11 * mu11));
+            double major =
+                std::sqrt(std::max(0.0, 8.0 * (mu20 + mu02 + common)));
+            double minor =
+                std::sqrt(std::max(0.0, 8.0 * (mu20 + mu02 - common)));
+
+            double eccentricity = 0.0;
+            if (major > 1e-9)
+            {
+                double ratio = minor / major;
+                eccentricity = std::sqrt(std::max(0.0, 1.0 - ratio * ratio));
+            }
+
+            Region region;
+            region.label = l;
+            region.bbox = { a.minr, a.minc, a.maxr + 1, a.maxc + 1 };
+            region.area = a.area;
+            region.coords = std::move(a.coords);
+            region.eccentricity = eccentricity;
+            regions.push_back(std::move(region));
+        }
+
+        return regions;
+    }
+
+    bool square_filter(const image::gray8_image& denoise,
+                       const image::gray8_image& /*binary*/,
+                       const Region& region, std::vector<Point>& corners_out)
+    {
+        corners_out.clear();
+
+        if (region.area < 50)
+            return false;
+
+        image::gray8_image square1 = crop_image(denoise, region.bbox);
+        image::gray8_image square_im = get_inner_square(square1);
+        std::vector<Point> coords = get_corner(square_im);
+
+        if (coords.size() < 4)
+        {
+            corners_out = coords;
+            return false;
+        }
+
+        coords = get_four_coord(coords);
+        if (coords.size() != 4)
+            return false;
+
+        coords = order_points(coords);
+
+        if (!check_region_shape(region))
+            return false;
+
+        bool ok = check_form(coords);
+        corners_out = coords;
+        return ok;
+    }
+
+    Point get_center(const std::array<int, 4>& bbox)
+    {
+        return { (bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0 };
+    }
 
     std::vector<Triplet> get_triplets(const std::vector<Element>& elements,
                                       int image_sx, int image_sy,
