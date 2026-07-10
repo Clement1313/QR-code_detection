@@ -113,7 +113,7 @@ namespace qr_code
         return { min_row, min_col, max_row, max_col };
     }
 
-    std::vector<BBox> detect_qr(const std::string& image_path)
+    std::vector<BBox> detect_qr_old(const std::string& image_path)
     {
         image::rgb24_image* image = image::load_image(image_path.c_str());
         if (!image)
@@ -214,7 +214,7 @@ namespace qr_code
         }
         else
         {
-            return detect_qr(image_path);
+            return detect_qr_old(image_path);
         }
     }
 
