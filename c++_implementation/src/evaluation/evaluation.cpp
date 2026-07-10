@@ -8,8 +8,11 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "debug/debug_visualization.hh"
 #include "detection/preprocess.hh"
 #include "util/image_io.hh"
+
+#define DEBUG true
 
 namespace
 {
@@ -147,6 +150,72 @@ namespace qr_code
 
         delete image;
         return detections;
+    }
+
+    std::vector<BBox> detect_qr_debug(const std::string& image_path)
+    {
+        image::rgb24_image* image = image::load_image(image_path.c_str());
+
+        if (!image)
+            throw std::runtime_error("Impossible de charger " + image_path);
+
+        std::shared_ptr<Preprocess> pre = preprocess(*image);
+        std::string debug_folder =
+            "debug/" + std::filesystem::path(image_path).stem().string();
+        qr_code::save_preprocess_debug(debug_folder, *pre);
+        const image::gray8_image& binary = pre->image_binary;
+        const image::gray8_image& denoise = pre->image_denoise;
+
+        LabelImage lab = labels(denoise);
+        save_labels_debug(debug_folder + "/06_labels.png", lab);
+
+        std::vector<Region> regions = regionprops(lab);
+        save_regions_debug(debug_folder + "/07_regions.png", lab, regions);
+
+        std::vector<Element> elements;
+        for (const Region& region : regions)
+        {
+            std::vector<Point> corners;
+            bool ok = square_filter(denoise, binary, region, corners);
+            if (ok)
+            {
+                elements.push_back({ region.bbox, corners, region.area });
+            }
+        }
+        save_elements_debug(debug_folder + "/08_elements.png", *image,
+                            elements);
+
+        std::vector<Triplet> triplets =
+            get_triplets(elements, image->sx, image->sy);
+        save_triplets_debug(debug_folder + "/09_triplets.png", *image,
+                            triplets);
+
+        std::vector<BBox> detections;
+        std::vector<std::vector<Point>> debug_corners;
+        for (const Triplet& triplet : triplets)
+        {
+            std::vector<Point> qr_corners = get_qr_corners(triplet);
+            if (qr_corners.empty())
+                continue;
+            detections.push_back(corners_to_bbox(qr_corners));
+            debug_corners.push_back(qr_corners);
+        }
+
+        save_qr_debug(debug_folder + "/10_qr.png", *image, debug_corners);
+        delete image;
+        return detections;
+    }
+
+    std::vector<BBox> detect_qr(const std::string& image_path)
+    {
+        if (DEBUG)
+        {
+            return detect_qr_debug(image_path);
+        }
+        else
+        {
+            return detect_qr(image_path);
+        }
     }
 
     double compute_iou(const BBox& box1, const BBox& box2)
