@@ -65,7 +65,8 @@ namespace qr_code
                         std::vector<Point>& corners_out);
 
     std::vector<Triplet> get_triplets(const std::vector<Element>& elements,
-                                       int image_sx, int image_sy);
+                                      int image_sx, int image_sy,
+                                      double angle_tolerance = 35.0);
 
     std::vector<Point> get_qr_corners(const Triplet& triplet);
 

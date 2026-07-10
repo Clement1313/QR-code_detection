@@ -28,6 +28,110 @@ namespace qr_code
                 std::clamp(ba_row * bc_row + ba_col * bc_col, -1.0, 1.0);
             return std::acos(dot) * 180.0 / kPi;
         }
+        
+        bool check_area(long a1, long a2, double ratio = 1.6)
+        {
+            if (a1 <= 0 || a2 <= 0)
+                return false;
+            double mx = static_cast<double>(std::max(a1, a2));
+            double mn = static_cast<double>(std::min(a1, a2));
+            return (mx / mn) < ratio;
+        }
+
+        bool similar_area(const Element& m1, const Element& m2, const Element& m3)
+        {
+            return check_area(m1.area, m2.area) && check_area(m1.area, m3.area)
+                && check_area(m2.area, m3.area);
+        }
+
+        std::optional<double> marker_size_from_corners(const Element& element)
+        {
+            if (element.corners.size() != 4)
+                return std::nullopt;
+            double sum = 0;
+            for (int i = 0; i < 4; i++)
+                sum += std::hypot(
+                    element.corners[i].row - element.corners[(i + 1) % 4].row,
+                    element.corners[i].col - element.corners[(i + 1) % 4].col);
+            return sum / 4.0;
+        }
+
+        double estimate_max_distance(const std::vector<Element>& elements,
+                                     int image_sx, int image_sy,
+                                     double factor = 8.0)
+        {
+            double min_dim = std::min(image_sx, image_sy);
+            if (elements.empty())
+                return min_dim * 0.5;
+
+            std::vector<double> sizes;
+            for (const Element& e : elements)
+            {
+                double h = e.bbox[2] - e.bbox[0];
+                double w = e.bbox[3] - e.bbox[1];
+                sizes.push_back((h + w) / 2.0);
+            }
+            std::sort(sizes.begin(), sizes.end());
+            double median_size = (sizes.size() % 2 == 1)
+                ? sizes[sizes.size() / 2]
+                : (sizes[sizes.size() / 2 - 1] + sizes[sizes.size() / 2]) / 2.0;
+
+            return std::clamp(median_size * factor, 50.0, min_dim * 0.8);
+        }
+
+        double get_triplet_score(const std::array<Point, 3>& centers,
+                                 const std::array<const Element*, 3>& elements)
+        {
+            const Point& A = centers[0];
+            const Point& B = centers[1];
+            const Point& C = centers[2];
+
+            double angles[3] = { angle(B, A, C), angle(A, B, C),
+                                 angle(A, C, B) };
+            int idx = 0;
+            double best_dev = std::abs(angles[0] - 90.0);
+            for (int i = 1; i < 3; i++)
+            {
+                double dev = std::abs(angles[i] - 90.0);
+                if (dev < best_dev)
+                {
+                    best_dev = dev;
+                    idx = i;
+                }
+            }
+            double right_angle_dev = std::abs(angles[idx] - 90.0) / 90.0;
+
+            std::array<double, 3> d = {
+                std::hypot(A.row - B.row, A.col - B.col),
+                std::hypot(A.row - C.row, A.col - C.col),
+                std::hypot(B.row - C.row, B.col - C.col)
+            };
+            std::sort(d.begin(), d.end());
+            double side1 = d[0], side2 = d[1], diag = d[2];
+
+            double side_dev = (std::max(side1, side2) > 0)
+                ? std::abs(side1 - side2) / std::max(side1, side2)
+                : 0.0;
+            double expected_diag = std::sqrt(2.0) * (side1 + side2) / 2.0;
+            double diag_dev =
+                (diag > 0) ? std::abs(diag - expected_diag) / diag : 0.0;
+
+            std::array<std::optional<double>, 3> sizes = {
+                marker_size_from_corners(*elements[0]),
+                marker_size_from_corners(*elements[1]),
+                marker_size_from_corners(*elements[2])
+            };
+            double size_dev = 0.0;
+            if (sizes[0] && sizes[1] && sizes[2])
+            {
+                double mn = std::min({ *sizes[0], *sizes[1], *sizes[2] });
+                double mx = std::max({ *sizes[0], *sizes[1], *sizes[2] });
+                if (mx > 0)
+                    size_dev = (mx - mn) / mx;
+            }
+
+            return right_angle_dev + side_dev + diag_dev + size_dev;
+        }
 
         double polygon_area(const std::vector<Point>& corners)
         {
@@ -126,6 +230,79 @@ namespace qr_code
         }
 
     } // namespace
+
+    std::vector<Triplet> get_triplets(const std::vector<Element>& elements,
+                                      int image_sx, int image_sy,
+                                      double angle_tolerance)
+    {
+        struct Candidate
+        {
+            double score;
+            std::array<size_t, 3> idx;
+        };
+
+        std::vector<Candidate> candidates;
+        size_t n = elements.size();
+
+        (void)estimate_max_distance(elements, image_sx, image_sy);
+
+        for (size_t i = 0; i < n; i++)
+            for (size_t j = i + 1; j < n; j++)
+                for (size_t k = j + 1; k < n; k++)
+                {
+                    const Element& m1 = elements[i];
+                    const Element& m2 = elements[j];
+                    const Element& m3 = elements[k];
+
+                    if (!similar_area(m1, m2, m3))
+                        continue;
+
+                    std::array<Point, 3> centers = { get_center(m1.bbox),
+                                                     get_center(m2.bbox),
+                                                     get_center(m3.bbox) };
+
+                    double angles[3] = {
+                        angle(centers[1], centers[0], centers[2]),
+                        angle(centers[0], centers[1], centers[2]),
+                        angle(centers[0], centers[2], centers[1])
+                    };
+                    int idx = 0;
+                    double best_dev = std::abs(angles[0] - 90.0);
+                    for (int a = 1; a < 3; a++)
+                    {
+                        double dev = std::abs(angles[a] - 90.0);
+                        if (dev < best_dev)
+                        {
+                            best_dev = dev;
+                            idx = a;
+                        }
+                    }
+                    if (std::abs(angles[idx] - 90.0) > angle_tolerance)
+                        continue;
+
+                    std::array<const Element*, 3> elems = { &m1, &m2, &m3 };
+                    double score = get_triplet_score(centers, elems);
+                    candidates.push_back({ score, { i, j, k } });
+                }
+
+        std::sort(candidates.begin(), candidates.end(),
+                  [](const Candidate& a, const Candidate& b) {
+                      return a.score < b.score;
+                  });
+
+        std::vector<bool> used(n, false);
+        std::vector<Triplet> triplets;
+        for (const Candidate& c : candidates)
+        {
+            if (used[c.idx[0]] || used[c.idx[1]] || used[c.idx[2]])
+                continue;
+            used[c.idx[0]] = used[c.idx[1]] = used[c.idx[2]] = true;
+            triplets.push_back(
+                { elements[c.idx[0]], elements[c.idx[1]], elements[c.idx[2]] });
+        }
+
+        return triplets;
+    }
 
     std::vector<Point> get_qr_corners(const Triplet& triplet)
     {
