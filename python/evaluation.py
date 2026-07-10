@@ -2,8 +2,9 @@ from pathlib import Path
 import numpy as np
 import skimage as ski
 
-from square_detection import square_filter, get_triplets, get_qr_corners
-from main import load_image, preprocess, denoising, labels
+from python.square_detection import should_remove_smaller, filter_contained_triplets
+from square_detection import square_filter, get_triplets, get_qr_corners, get_center
+from main import load_image, preprocess, denoising, labels,save_debug
 
 def parse_ground_truth(txt_path: Path) -> list[list[tuple[float, float]]]:
     qr_codes = []
@@ -62,7 +63,8 @@ def detect_qr(image_path: str) -> list[tuple]:
         if res:
             elements.append({"bbox": region.bbox, "corners": coords, "area": region.area})
 
-    triplets = get_triplets(elements, im.shape)
+    triplets = get_triplets(elements,im.shape)
+    triplets = filter_contained_triplets(triplets)
     detections = []
     for triplet in triplets:
         qr_corners = get_qr_corners(triplet)
@@ -70,6 +72,7 @@ def detect_qr(image_path: str) -> list[tuple]:
         cols = [p[1] for p in qr_corners]
         bbox = (min(rows), min(cols), max(rows), max(cols))
         detections.append(bbox)
+    save_debug(Path(image_path).stem, im,equalized,gray,binary,denoise,lab,regions)
 
     return detections
 
@@ -183,7 +186,9 @@ def evaluate_folder(folder_path: str, iou_threshold: float = 0.5, verbose: bool 
         try:
             detections = detect_qr(str(image_file))
         except Exception as e:
+            import traceback
             print(f"  [ERREUR] {image_file.name} : {e}")
+            traceback.print_exc()
             skipped += 1
             continue
 

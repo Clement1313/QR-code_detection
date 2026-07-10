@@ -3,7 +3,8 @@ from itertools import combinations
 import skimage as ski
 import numpy as np
 from pathlib import Path
-from square_detection import square_filter,get_triplets,get_qr_corners,draw_qr,get_center
+from square_detection import square_filter, get_triplets, get_qr_corners, draw_qr, get_center, filter_contained_triplets
+
 
 def load_image(filepath: str) -> np.ndarray:
     return ski.io.imread(filepath)
@@ -24,7 +25,7 @@ def grayscale(im: np.ndarray) -> np.ndarray:
 
 
 def bin(im: np.ndarray) -> np.ndarray:
-    block_size = 35
+    block_size = max(35, (min(im.shape[:2]) // 15) | 1)
     thresh = ski.filters.threshold_local(im,block_size,offset=10)
     return ((im > thresh) * 255).astype(np.uint8)
 
@@ -34,6 +35,7 @@ def preprocess(im: np.ndarray) -> np.ndarray:
         im = im[:, :, :3]
     eqalized = histogram_equalization(im)
     gray = grayscale(eqalized)
+    gray = ski.filters.median(gray, ski.morphology.disk(2))
     bin_im = bin(gray)
     return eqalized, gray,bin_im
 
@@ -44,11 +46,15 @@ def sobel(im: np.ndarray) -> np.ndarray:
 
 
 def denoising(im: np.ndarray) -> np.ndarray:
-    im = ski.morphology.closing(im)
-    im = ski.morphology.opening(im)
+    selem = ski.morphology.disk(2)
+    im = ski.morphology.closing(im, selem)
+    im = ski.morphology.opening(im, selem)
+
+    #im = ski.morphology.remove_small_objects(im.astype(bool), min_size=20)
+    #im = ski.morphology.remove_small_holes(im, max_size=20)
     # im = ski.morphology.erosion(im)
     # im = ski.morphology.dilation(im)
-    return (im * 255).astype(np.uint8)
+    return im.astype(np.uint8) # * 255
 
 
 def labels(im: np.ndarray) -> np.ndarray:
@@ -70,7 +76,7 @@ def draw_regions(im_original: np.ndarray, labels: np.ndarray, regions: np.ndarra
     return overlay, im_original
 
 
-def draw_squares(im_original: np.ndarray, squares):
+def draw_squares(im_original: np.ndarray, squares,color=[0,255,0]):
     img = im_original.copy()
 
     for minr, minc, maxr, maxc in squares:
@@ -79,7 +85,7 @@ def draw_squares(im_original: np.ndarray, squares):
             end=(maxr, maxc),
             shape=img.shape
         )
-        img[rr, cc] = [0, 255, 0]
+        img[rr, cc] = color
 
     return img
 
@@ -160,8 +166,18 @@ def save_debug(image_name: str, original: np.ndarray, equalized: np.ndarray, gra
         res, coords = square_filter(denoise,binary,region)
         if res:
             element.append({ "bbox": region.bbox, "corners": coords, "area": region.area})
-
-    triplets = get_triplets(element)
+            bbox = draw_squares(bbox,[region.bbox])
+            minr, minc, maxr, maxc = region.bbox
+            """
+            for elt in coords:
+                global_pt = (elt[0] + minr,elt[1] + minc)
+                rr,cc = ski.draw.disk(global_pt,3)
+                bbox[rr,cc] = [0, 0, 255]
+            """
+        else:
+            bbox = draw_squares(bbox,[region.bbox],[0,0,255])
+    triplets = get_triplets(element,original.shape)
+    triplets = filter_contained_triplets(triplets)
     for triplet in triplets:
         fourth = get_qr_corners(triplet)
         bbox = draw_qr(bbox,fourth)
@@ -172,18 +188,19 @@ def process_directory(image_path: str):
     im = load_image(image_path)
     equalized, gray, binary= preprocess(im)
 
-    ### square detection
+    ### square detections
     denoise = denoising(binary)
     lab = labels(denoise)
     regions = ski.measure.regionprops(lab)
 
     element = []
     for region in regions:
-        res, coords = square_filter(denoise, binary, region)
+        res, coords = square_filter(denoise,binary, region)
         if res:
             element.append({"bbox": region.bbox, "corners": coords, "area": region.area})
 
-    triplets = get_triplets(element)
+    triplets = get_triplets(element,im.shape)
+    triplets = filter_contained_triplets(triplets)
     print(f"{len(triplets)} QR code détectés")
     res = im.copy()
     qr_code = []
@@ -291,55 +308,6 @@ def get_result(valid_makers,ground_truth):
     print("Precision :", pres)
     print("Recall :", recal)
     print("F1 :", f)
-
-
-# Vérité terrain pour l'évaluation (3 marqueurs par QR code attendus)
-groun_truh = {
-    # 1. Image de l'écran de PC (QR code en bas à droite de l'écran)
-    "IMG_3888.JPG": [
-        (2910, 2110, 2990, 2190),  # Marqueur Haut-Gauche
-        (2915, 2240, 2995, 2320),  # Marqueur Haut-Droite
-        (3040, 2115, 3120, 2195)  # Marqueur Bas-Gauche
-    ],
-
-    # 2. Image du PC portable de face (Sticker QR sur la table à gauche)
-    "IMG_3889.JPG": [
-        (2210, 170, 2320, 280),  # Marqueur Haut-Gauche
-        (2110, 310, 2220, 420),  # Marqueur Haut-Droite
-        (2390, 315, 2500, 425)  # Marqueur Bas-Gauche
-    ],
-
-    # 3. Image du PC vue du dessus (Sticker QR plus proche et droit)
-    "IMG_3890.JPG": [
-        (1910, 380, 2030, 500),  # Marqueur Haut-Gauche
-        (1915, 730, 2035, 850),  # Marqueur Haut-Droite
-        (2250, 375, 2370, 495)  # Marqueur Bas-Gauche
-    ],
-
-    "IMG_3891.JPG": [
-        (2040, 790, 2150, 900),  # Marqueur Haut-Gauche (vu incliné)
-        (1880, 1070, 1990, 1180),  # Marqueur Haut-Droite
-        (2210, 1140, 2320, 1250)  # Marqueur Bas-Gauche
-    ],
-
-    "IMG_3892.JPG": [
-        (2110, 1720, 2240, 1850),  # Marqueur Haut-Gauche
-        (2120, 2220, 2250, 2350),  # Marqueur Haut-Droite
-        (2510, 1740, 2640, 1870)  # Marqueur Bas-Gauche
-    ],
-
-    "IMG_3895.JPG": [
-        (1610, 1110, 1790, 1290),  # Marqueur Haut-Gauche (boîte englobante large due à l'angle)
-        (1350, 1700, 1530, 1880),  # Marqueur Haut-Droite
-        (2020, 1430, 2200, 1610)  # Marqueur Bas-Gauche
-    ],
-
-    "Pastedimage.JPG": [
-        (220, 140, 290, 210),  # Marqueur Haut-Gauche
-        (90, 245, 160, 315),  # Marqueur Haut-Droite
-        (325, 250, 395, 320)  # Marqueur Bas-Gauche
-    ]
-}
 
 
 
