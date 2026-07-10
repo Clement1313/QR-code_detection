@@ -6,8 +6,9 @@ from python.square_detection import should_remove_smaller, filter_contained_trip
 from square_detection import square_filter, get_triplets, get_qr_corners, get_center
 from main import load_image, preprocess, denoising, labels,save_debug
 
-def parse_ground_truth(txt_path: Path) -> list[list[tuple]]:
+def parse_ground_truth(txt_path: Path) -> list[list[tuple[float, float]]]:
     qr_codes = []
+    current_pts = []
     in_sets = False
     with open(txt_path, "r") as f:
         for line in f:
@@ -17,11 +18,26 @@ def parse_ground_truth(txt_path: Path) -> list[list[tuple]]:
             if line == "SETS":
                 in_sets = True
                 continue
+            values = list(map(float, line.split()))
             if in_sets:
-                values = list(map(float, line.split()))
-                if len(values) == 8:
-                    pts = [(values[i + 1], values[i]) for i in range(0, 8, 2)]
-                    qr_codes.append(pts)
+                if len(values) != 8:
+                    raise ValueError(f"Ligne invalide : {line}")
+                pts = [
+                    (values[i], values[i + 1])
+                    for i in range(0, 8, 2)
+                ]
+                qr_codes.append(pts)
+            else:
+                if len(values) != 2:
+                    raise ValueError(f"Ligne invalide : {line}")
+                current_pts.append((values[0], values[1]))
+    if current_pts:
+        if len(current_pts) != 4:
+            raise ValueError(
+                f"Le fichier contient {len(current_pts)} points au lieu de 4."
+            )
+        qr_codes.append(current_pts)
+
     return qr_codes
 
 
