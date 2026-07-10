@@ -1,8 +1,9 @@
 #pragma once
 
-#include <cstdint>
-#include <vector>
 #include <array>
+#include <cstdint>
+#include <utility>
+#include <vector>
 
 #include "util/image_io.hh"
 
@@ -20,8 +21,14 @@ namespace qr_code
         int sy;
         std::vector<int32_t> data; // size sx * sy
 
-        int32_t& at(int x, int y) { return data[y * sx + x]; }
-        int32_t at(int x, int y) const { return data[y * sx + x]; }
+        int32_t& at(int x, int y)
+        {
+            return data[y * sx + x];
+        }
+        int32_t at(int x, int y) const
+        {
+            return data[y * sx + x];
+        }
     };
 
     struct Region
@@ -29,7 +36,9 @@ namespace qr_code
         int label;
         std::array<int, 4> bbox;
         long area;
-        std::vector<std::pair<int, int>> coords;
+        std::vector<std::pair<int, int>>
+            coords;
+        double eccentricity;
     };
 
     struct Element
@@ -59,5 +68,10 @@ namespace qr_code
                                        int image_sx, int image_sy);
 
     std::vector<Point> get_qr_corners(const Triplet& triplet);
+
+    std::vector<Triplet>
+    filter_contained_triplets(const std::vector<Triplet>& triplets,
+                              double size_tolerance = 0.9,
+                              double overlap_threshold = 0.8);
 
 } // namespace qr_code
