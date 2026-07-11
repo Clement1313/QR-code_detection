@@ -1,10 +1,13 @@
 #include <iostream>
+#include <filesystem>
+#include <bits/stdc++.h>
+
 
 #include "detection/preprocess.hh"
 #include "util/image_io.hh"
 #include "evaluation/evaluation.hh"
+#include "detection/pipeline.hh"
 
-#include <iostream>
 #define PATH "C:\\Users\\marce\\Desktop\\QR-code_detection"
 #define PATH_TEST "../data/IMG_3888.JPG"
 #define PATH_EQUALIZED "equalized.tga"
@@ -12,6 +15,7 @@
 #define PATH_BINARY "binary.tga"
 #define PATH_DENOISED "denoisese.tga"
 #define DATASET_FOLDER "../data/Dataset/detection/monitor"
+// #define DATASET_FOLDER "../data/"
 #define PATH_MEDIAN "median.tga"
 
 void test_preprocess(const char* filename)
@@ -36,32 +40,11 @@ void test_preprocess(const char* filename)
     image::save_image(denoised, PATH_DENOISED);
 }
 
-// void test_median(const char* filename) // enable median funcion in preprocess.hh
-// {
-//     image::rgb24_image* image = image::load_image(filename);
-//     if (!image)
-//     {
-//         std::cerr << "Error loading image\n";
-//         return;
-//     }
-
-//     image::gray8_image grayscale = image::rgb_to_gray(*image);
-//     image::gray8_image median_result{ grayscale.sx, grayscale.sy };
-
-//     qr_code::median(grayscale, median_result, 1);
-
-//     image::rgb24_image grayscale_rgb = image::gray_to_rgb(grayscale);
-//     image::rgb24_image median_rgb = image::gray_to_rgb(median_result);
-
-//     image::save_image(grayscale_rgb, PATH_GRAYSCALE);
-//     image::save_image(median_rgb, PATH_MEDIAN);
-// }
-
 int main()
 {
-    test_preprocess(PATH_TEST);
+    // test_preprocess(PATH_TEST);
     // test_median(PATH_TEST);
-    // qr_code::evaluate_folder(DATASET_FOLDER, 0.5, true); // execute evaluation pipeline
+    qr_code::evaluate_folder(DATASET_FOLDER, 0.5, true); // execute evaluation pipeline
 
     return 0;
 }
