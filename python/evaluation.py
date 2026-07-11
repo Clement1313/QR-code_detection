@@ -3,7 +3,7 @@ import numpy as np
 import skimage as ski
 
 from square_detection import square_filter, get_triplets, get_qr_corners, filter_contained_triplets
-from main import load_image, preprocess, denoising, labels,save_debug
+from main import load_image, preprocess, denoising, labels, save_debug, draw_qr
 
 def parse_ground_truth(txt_path: Path) -> list[list[tuple[float, float]]]:
     qr_codes = []
@@ -64,15 +64,25 @@ def detect_qr(image_path: str) -> list[tuple]:
 
     triplets = get_triplets(elements,im.shape)
     triplets = filter_contained_triplets(triplets)
+    result = im.copy()
     detections = []
     for triplet in triplets:
         qr_corners = get_qr_corners(triplet)
+
+        # Dessine le QR détecté
+        result = draw_qr(result, qr_corners)
+
         rows = [p[0] for p in qr_corners]
         cols = [p[1] for p in qr_corners]
-        bbox = (min(rows), min(cols), max(rows), max(cols))
-        detections.append(bbox)
-    save_debug(Path(image_path).stem, im,equalized,gray,binary,denoise,lab,regions)
 
+        bbox = (min(rows), min(cols), max(rows), max(cols))
+        detections.append(bbox)    # save_debug(Path(image_path).stem, im,equalized,gray,binary,denoise,lab,regions)
+
+    output_dir = Path("results")
+    output_dir.mkdir(exist_ok=True)
+
+    output_path = output_dir / f"{Path(image_path).stem}_result.png"
+    ski.io.imsave(output_path, result)
     return detections
 
 
