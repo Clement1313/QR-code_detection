@@ -430,8 +430,12 @@ namespace qr_code
         image::rgb24_image equalized{ image.sx, image.sy };
         equalized_image(image, equalized);
         image::gray8_image gray = image::rgb_to_gray(equalized);
+
+        image::gray8_image gray_smoothed{ image.sx, image.sy };
+        median(gray, gray_smoothed, 2);
+
         image::gray8_image bin_im{ image.sx, image.sy };
-        bin(gray, bin_im);
+        bin(gray_smoothed, bin_im);
         image::gray8_image denoises{ image.sx, image.sy };
         denoise(bin_im, denoises, 1);
 
