@@ -74,6 +74,9 @@ namespace qr_code
                               double overlap_threshold = 0.8);
 
     Point get_center(const std::array<int, 4>& bbox);
+    double polygon_area(const std::vector<Point>& corners);
+    double angle(const Point& a, const Point& b, const Point& c);
+    bool is_convex_quad(const std::vector<Point>& coords);
 
     void draw_qr(image::rgb24_image& image, const std::vector<Point>& corners);
 
