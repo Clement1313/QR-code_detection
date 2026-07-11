@@ -2,9 +2,14 @@ from pathlib import Path
 import numpy as np
 import skimage as ski
 
-from python.square_detection import filter_contained_triplets
-from square_detection import square_filter, get_triplets, get_qr_corners, get_center
-from main import load_image, preprocess, denoising, labels,save_debug
+from square_detection import (
+    square_filter,
+    get_triplets,
+    get_qr_corners,
+    filter_contained_triplets,
+)
+from main import load_image, preprocess, denoising, labels, save_debug, draw_qr
+
 
 def parse_ground_truth(txt_path: Path) -> list[list[tuple[float, float]]]:
     qr_codes = []
@@ -22,15 +27,12 @@ def parse_ground_truth(txt_path: Path) -> list[list[tuple[float, float]]]:
             if in_sets:
                 if len(values) != 8:
                     raise ValueError(f"Ligne invalide : {line}")
-                pts = [
-                    (values[i], values[i + 1])
-                    for i in range(0, 8, 2)
-                ]
+                pts = [(values[i + 1], values[i]) for i in range(0, 8, 2)]
                 qr_codes.append(pts)
             else:
                 if len(values) != 2:
                     raise ValueError(f"Ligne invalide : {line}")
-                current_pts.append((values[0], values[1]))
+                current_pts.append((values[1], values[0]))
     if current_pts:
         if len(current_pts) != 4:
             raise ValueError(
@@ -61,9 +63,11 @@ def detect_qr(image_path: str) -> list[tuple]:
     for region in regions:
         res, coords = square_filter(denoise, binary, region)
         if res:
-            elements.append({"bbox": region.bbox, "corners": coords, "area": region.area})
+            elements.append(
+                {"bbox": region.bbox, "corners": coords, "area": region.area}
+            )
 
-    triplets = get_triplets(elements,im.shape)
+    triplets = get_triplets(elements)
     triplets = filter_contained_triplets(triplets)
     detections = []
     for triplet in triplets:
@@ -72,7 +76,7 @@ def detect_qr(image_path: str) -> list[tuple]:
         cols = [p[1] for p in qr_corners]
         bbox = (min(rows), min(cols), max(rows), max(cols))
         detections.append(bbox)
-    save_debug(Path(image_path).stem, im,equalized,gray,binary,denoise,lab,regions)
+    # save_debug(Path(image_path).stem, im,equalized,gray,binary,denoise,lab,regions)
 
     return detections
 
@@ -93,7 +97,9 @@ def compute_iou(box1: tuple, box2: tuple) -> float:
     return inter / union
 
 
-def evaluate(detections: list, ground_truth: list, iou_threshold: float = 0.5) -> tuple[int, int, int]:
+def evaluate(
+    detections: list, ground_truth: list, iou_threshold: float = 0.5
+) -> tuple[int, int, int]:
     matched_gt = set()
     tp = 0
     fp = 0
@@ -187,6 +193,7 @@ def evaluate_folder(folder_path: str, iou_threshold: float = 0.5, verbose: bool 
             detections = detect_qr(str(image_file))
         except Exception as e:
             import traceback
+
             print(f"  [ERREUR] {image_file.name} : {e}")
             traceback.print_exc()
             skipped += 1
@@ -235,5 +242,5 @@ def evaluate_folder(folder_path: str, iou_threshold: float = 0.5, verbose: bool 
 
 
 if __name__ == "__main__":
-    DATASET_FOLDER = ("../data/Dataset/detection/brightness")
+    DATASET_FOLDER = "../data/Dataset/detection/monitor"
     evaluate_folder(DATASET_FOLDER, iou_threshold=0.5, verbose=True)

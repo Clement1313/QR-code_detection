@@ -9,3 +9,9 @@ dependencies = [
     "numpy>=2.4.6",
     "scikit-image>=0.26.0",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest" ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
