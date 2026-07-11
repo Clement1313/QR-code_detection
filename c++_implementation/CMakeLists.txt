@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 
 add_subdirectory(src)
 add_subdirectory(benchmark)
+add_subdirectory(test_suite)
 
 add_executable(qrcode_detection src/main.cpp)
 

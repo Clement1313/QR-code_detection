@@ -394,21 +394,6 @@ namespace qr_code
             return best;
         }
 
-        bool is_convex_quad(const std::vector<Point>& coords)
-        {
-            int sum_signs = 0;
-            for (int i = 0; i < 4; i++)
-            {
-                const Point& p0 = coords[(i + 3) % 4];
-                const Point& p1 = coords[i];
-                const Point& p2 = coords[(i + 1) % 4];
-                double v1_row = p1.row - p0.row, v1_col = p1.col - p0.col;
-                double v2_row = p2.row - p1.row, v2_col = p2.col - p1.col;
-                double cross = v1_row * v2_col - v1_col * v2_row;
-                sum_signs += (cross > 0) - (cross < 0);
-            }
-            return std::abs(sum_signs) == 4;
-        }
 
         bool check_side_ratio(const std::vector<Point>& coords,
                               double min_ratio = 0.35)
@@ -436,22 +421,7 @@ namespace qr_code
             return region.eccentricity <= max_eccentricity;
         }
 
-        double angle(const Point& a, const Point& b, const Point& c)
-        {
-            double ba_row = a.row - b.row, ba_col = a.col - b.col;
-            double bc_row = c.row - b.row, bc_col = c.col - b.col;
-            double na = std::hypot(ba_row, ba_col);
-            double nc = std::hypot(bc_row, bc_col);
-            if (na == 0.0 || nc == 0.0)
-                return 0.0;
-            ba_row /= na;
-            ba_col /= na;
-            bc_row /= nc;
-            bc_col /= nc;
-            double dot =
-                std::clamp(ba_row * bc_row + ba_col * bc_col, -1.0, 1.0);
-            return std::acos(dot) * 180.0 / kPi;
-        }
+
 
         bool check_area(long a1, long a2, double ratio = 1.6)
         {
@@ -558,18 +528,7 @@ namespace qr_code
             return right_angle_dev + side_dev + diag_dev + size_dev;
         }
 
-        double polygon_area(const std::vector<Point>& corners)
-        {
-            double sum1 = 0, sum2 = 0;
-            size_t n = corners.size();
-            for (size_t i = 0; i < n; i++)
-            {
-                size_t prev = (i == 0) ? n - 1 : i - 1;
-                sum1 += corners[i].col * corners[prev].row;
-                sum2 += corners[i].row * corners[prev].col;
-            }
-            return 0.5 * std::abs(sum1 - sum2);
-        }
+
 
         bool inside(const Point& p, const Point& a, const Point& b)
         {
@@ -767,6 +726,54 @@ namespace qr_code
         }
 
     } // namespace
+
+
+
+    bool is_convex_quad(const std::vector<Point>& coords)
+    {
+        int sum_signs = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            const Point& p0 = coords[(i + 3) % 4];
+            const Point& p1 = coords[i];
+            const Point& p2 = coords[(i + 1) % 4];
+            double v1_row = p1.row - p0.row, v1_col = p1.col - p0.col;
+            double v2_row = p2.row - p1.row, v2_col = p2.col - p1.col;
+            double cross = v1_row * v2_col - v1_col * v2_row;
+            sum_signs += (cross > 0) - (cross < 0);
+        }
+        return std::abs(sum_signs) == 4;
+    }
+
+double angle(const Point& a, const Point& b, const Point& c)
+    {
+        double ba_row = a.row - b.row, ba_col = a.col - b.col;
+        double bc_row = c.row - b.row, bc_col = c.col - b.col;
+        double na = std::hypot(ba_row, ba_col);
+        double nc = std::hypot(bc_row, bc_col);
+        if (na == 0.0 || nc == 0.0)
+            return 0.0;
+        ba_row /= na;
+        ba_col /= na;
+        bc_row /= nc;
+        bc_col /= nc;
+        double dot =
+            std::clamp(ba_row * bc_row + ba_col * bc_col, -1.0, 1.0);
+        return std::acos(dot) * 180.0 / kPi;
+    }
+
+    double polygon_area(const std::vector<Point>& corners)
+    {
+        double sum1 = 0, sum2 = 0;
+        size_t n = corners.size();
+        for (size_t i = 0; i < n; i++)
+        {
+            size_t prev = (i == 0) ? n - 1 : i - 1;
+            sum1 += corners[i].col * corners[prev].row;
+            sum2 += corners[i].row * corners[prev].col;
+        }
+        return 0.5 * std::abs(sum1 - sum2);
+    }
 
     LabelImage labels(const image::gray8_image& denoise)
     {
