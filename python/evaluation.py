@@ -69,15 +69,25 @@ def detect_qr(image_path: str) -> list[tuple]:
 
     triplets = get_triplets(elements)
     triplets = filter_contained_triplets(triplets)
+    result = im.copy()
     detections = []
     for triplet in triplets:
         qr_corners = get_qr_corners(triplet)
+
+        # Dessine le QR détecté
+        result = draw_qr(result, qr_corners)
+
         rows = [p[0] for p in qr_corners]
         cols = [p[1] for p in qr_corners]
+
         bbox = (min(rows), min(cols), max(rows), max(cols))
         detections.append(bbox)
-    # save_debug(Path(image_path).stem, im,equalized,gray,binary,denoise,lab,regions)
+        
+    output_dir = Path("results")
+    output_dir.mkdir(exist_ok=True)
 
+    output_path = output_dir / f"{Path(image_path).stem}_result.png"
+    ski.io.imsave(output_path, result)
     return detections
 
 

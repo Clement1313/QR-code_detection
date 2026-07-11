@@ -400,29 +400,49 @@ namespace qr_code
     {
         int w = input.sx, h = input.sy;
         int window_size = (2 * radius + 1) * (2 * radius + 1);
-        std::vector<uint8_t> window(window_size);
         const uint8_t* buf = input.get_buffer();
+        uint8_t* out = result.get_buffer();
 
-        for (int y = 0; y < h; y++)
-        {
-            for (int x = 0; x < w; x++)
+        auto worker = [&](int y_begin, int y_end) {
+            std::vector<uint8_t> window(window_size);
+            for (int y = y_begin; y < y_end; y++)
             {
-                int i = 0;
-                for (int dy = -radius; dy <= radius; dy++)
+                for (int x = 0; x < w; x++)
                 {
-                    int yy = std::clamp(y + dy, 0, h - 1);
-                    for (int dx = -radius; dx <= radius; dx++)
+                    int i = 0;
+                    for (int dy = -radius; dy <= radius; dy++)
                     {
-                        int xx = std::clamp(x + dx, 0, w - 1);
-                        window[i++] = buf[yy * w + xx];
+                        int yy = std::clamp(y + dy, 0, h - 1);
+                        for (int dx = -radius; dx <= radius; dx++)
+                        {
+                            int xx = std::clamp(x + dx, 0, w - 1);
+                            window[i++] = buf[yy * w + xx];
+                        }
                     }
+                    std::nth_element(window.begin(),
+                                     window.begin() + window_size / 2,
+                                     window.end());
+                    out[y * w + x] = window[window_size / 2];
                 }
-                std::nth_element(window.begin(),
-                                 window.begin() + window_size / 2,
-                                 window.end());
-                result.get_buffer()[y * w + x] = window[window_size / 2];
             }
+        };
+
+        unsigned int hw = std::thread::hardware_concurrency();
+        unsigned int workers = std::max(1u, hw);
+        workers = std::min<unsigned int>(workers, static_cast<unsigned int>(h));
+
+        std::vector<std::thread> threads;
+        int rows_per_worker = (h + workers - 1) / workers;
+        for (unsigned int t = 0; t < workers; t++)
+        {
+            int y_begin = t * rows_per_worker;
+            int y_end = std::min(h, y_begin + rows_per_worker);
+            if (y_begin >= y_end)
+                continue;
+            threads.emplace_back(worker, y_begin, y_end);
         }
+        for (auto& th : threads)
+            th.join();
     }
 
     std::shared_ptr<Preprocess> preprocess(const image::rgb24_image& image)
@@ -430,8 +450,12 @@ namespace qr_code
         image::rgb24_image equalized{ image.sx, image.sy };
         equalized_image(image, equalized);
         image::gray8_image gray = image::rgb_to_gray(equalized);
+
+        image::gray8_image gray_smoothed{ image.sx, image.sy };
+        median(gray, gray_smoothed, 2);
+
         image::gray8_image bin_im{ image.sx, image.sy };
-        bin(gray, bin_im);
+        bin(gray_smoothed, bin_im);
         image::gray8_image denoises{ image.sx, image.sy };
         denoise(bin_im, denoises, 1);
 
