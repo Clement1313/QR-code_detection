@@ -1,14 +1,16 @@
 import pytest
 from pathlib import Path
 from python.evaluation import evaluate_folder
-DATASET_TEST_PATH = "../../data/Dataset/detection/monitor"
+
+TEST_DIR = Path(__file__).parent
+DATASET_TEST_PATH = TEST_DIR / "../../test_suite/test_integration"
+
 
 # Seuils minimums acceptables
 MIN_PRECISION = 0.80
 MIN_RECALL = 0.80
 MIN_F1_SCORE = 0.80
 MIN_MEAN_IOU = 0.70
-
 
 def test_pipeline_performance():
     """
@@ -27,9 +29,13 @@ def test_pipeline_performance():
     mean_iou = results.get("mean_iou", 0)
 
     # Vérification des seuils
-    assert precision >= MIN_PRECISION, f"Précision trop basse : {precision:.2f} < {MIN_PRECISION}"
+    assert (
+        precision >= MIN_PRECISION
+    ), f"Précision trop basse : {precision:.2f} < {MIN_PRECISION}"
     assert recall >= MIN_RECALL, f"Rappel trop bas : {recall:.2f} < {MIN_RECALL}"
     assert f1 >= MIN_F1_SCORE, f"Score F1 trop bas : {f1:.2f} < {MIN_F1_SCORE}"
-    assert mean_iou >= MIN_MEAN_IOU, f"Mean IoU trop bas : {mean_iou:.2f} < {MIN_MEAN_IOU}"
+    assert (
+        mean_iou >= MIN_MEAN_IOU
+    ), f"Mean IoU trop bas : {mean_iou:.2f} < {MIN_MEAN_IOU}"
 
     print(f"Test d'intégration réussi ! F1-Score: {f1:.2f}, IoU: {mean_iou:.2f}")

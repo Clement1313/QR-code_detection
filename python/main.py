@@ -3,9 +3,19 @@ from itertools import combinations
 import skimage as ski
 import numpy as np
 from pathlib import Path
-from square_detection import square_filter, get_triplets, get_qr_corners, draw_qr, get_center, filter_contained_triplets
+from square_detection import (
+    square_filter,
+    get_triplets,
+    get_qr_corners,
+    draw_qr,
+    get_center,
+    filter_contained_triplets,
+)
 
 
+# =============================================================================
+#               LOAD AND SAVE IMAGE
+# =============================================================================
 def load_image(filepath: str) -> np.ndarray:
     return ski.io.imread(filepath)
 
@@ -14,11 +24,15 @@ def save_image(filepath: str, im: np.ndarray):
     ski.io.imsave(filepath, im)
 
 
+# =============================================================================
+#               PREPROCESS
+# =============================================================================
 def histogram_equalization(im: np.ndarray) -> np.ndarray:
     equalized = np.stack(
         [ski.exposure.equalize_hist(im[:, :, c]) for c in range(im.shape[2])], axis=-1
     )
     return (equalized * 255).astype(np.uint8)
+
 
 def grayscale(im: np.ndarray) -> np.ndarray:
     return (ski.color.rgb2gray(im) * 255).astype(np.uint8)
@@ -26,7 +40,7 @@ def grayscale(im: np.ndarray) -> np.ndarray:
 
 def bin(im: np.ndarray) -> np.ndarray:
     block_size = max(35, (min(im.shape[:2]) // 15) | 1)
-    thresh = ski.filters.threshold_local(im,block_size,offset=10)
+    thresh = ski.filters.threshold_local(im, block_size, offset=10)
     return ((im > thresh) * 255).astype(np.uint8)
 
 
@@ -37,31 +51,26 @@ def preprocess(im: np.ndarray) -> np.ndarray:
     gray = grayscale(eqalized)
     gray = ski.filters.median(gray, ski.morphology.disk(2))
     bin_im = bin(gray)
-    return eqalized, gray,bin_im
-
-
-def sobel(im: np.ndarray) -> np.ndarray:
-    im = ski.filters.sobel(im)
-    return (im * 255).astype(np.uint8)
+    return eqalized, gray, bin_im
 
 
 def denoising(im: np.ndarray) -> np.ndarray:
     selem = ski.morphology.disk(2)
     im = ski.morphology.closing(im, selem)
     im = ski.morphology.opening(im, selem)
-
-    #im = ski.morphology.remove_small_objects(im.astype(bool), min_size=20)
-    #im = ski.morphology.remove_small_holes(im, max_size=20)
-    # im = ski.morphology.erosion(im)
-    # im = ski.morphology.dilation(im)
-    return im.astype(np.uint8) # * 255
+    return im.astype(np.uint8)
 
 
+# =============================================================================
+#               LABEL AND DRAW
+# =============================================================================
 def labels(im: np.ndarray) -> np.ndarray:
     return ski.measure.label(im, connectivity=1)
 
 
-def draw_regions(im_original: np.ndarray, labels: np.ndarray, regions: np.ndarray) -> np.ndarray:
+def draw_regions(
+    im_original: np.ndarray, labels: np.ndarray, regions: np.ndarray
+) -> np.ndarray:
     overlay = ski.color.label2rgb(labels, bg_label=0, bg_color=(0, 0, 0))
     overlay = (overlay * 255).astype(np.uint8)
     for region in regions:
@@ -76,78 +85,31 @@ def draw_regions(im_original: np.ndarray, labels: np.ndarray, regions: np.ndarra
     return overlay, im_original
 
 
-def draw_squares(im_original: np.ndarray, squares,color=[0,255,0]):
+def draw_squares(im_original: np.ndarray, squares, color=[0, 255, 0]):
     img = im_original.copy()
 
     for minr, minc, maxr, maxc in squares:
         rr, cc = ski.draw.rectangle_perimeter(
-            start=(minr, minc),
-            end=(maxr, maxc),
-            shape=img.shape
+            start=(minr, minc), end=(maxr, maxc), shape=img.shape
         )
         img[rr, cc] = color
 
     return img
 
 
-def find_squares(im_original: np.ndarray, regions: np.ndarray) -> np.ndarray:
-    squares = []
-    for region in regions:
-        if region.area < 500:
-            continue
-        if region.extent < 0.5:
-            continue
-        #minr, minc, maxr, maxc = region.bbox
-        #if (abs(minc-maxc) - 10) <= abs(minr-maxr) and abs(minr-maxr) <= (abs(minc-maxc) + 10):
-        #    squares.append((minr, minc, maxr, maxc))
-        squares.append(region.bbox)
-
-    res = draw_squares(im_original, squares)
-    # print(len(squares))
-    return squares, res
-
-def verif_square(im: np.ndarray, squares: np.ndarray) -> []:
-    res = []
-    for minr, minc, maxr, maxc in squares:
-        square = im[minr:maxr, minc:maxc]
-        e4 = ski.measure.euler_number(square, connectivity=1)
-        object_nb_4 = ski.measure.label(square, connectivity=1).max()
-        holes_nb_4 = object_nb_4 - e4
-        # print(f'e4:{e4}, nb obj:{object_nb_4}, holes:{holes_nb_4}')
-        if holes_nb_4 == 1 and object_nb_4 == 1:
-            res.append((minr, minc, maxr, maxc))
-    return res
-
-def filter_qr_triplets(markers: list, max_distance: float = 500.0) -> list:
-    if len(markers) < 3:
-        return []
-    centers = np.array([
-        ((minr + maxr) / 2, (minc + maxc) / 2)
-        for minr, minc, maxr, maxc in markers
-    ])
-    def distance(a, b):
-        return np.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
-    triplets = []
-    n = len(markers)
-    for i in range(n):
-        for j in range(i+1, n):
-            if distance(centers[i], centers[j]) > max_distance:
-                continue
-            for k in range(j+1, n):
-                if distance(centers[i], centers[k]) > max_distance:
-                    continue
-                if distance(centers[j], centers[k]) > max_distance:
-                    continue
-                triplets.append((markers[i], markers[j], markers[k]))
-    return triplets
-
-
-
-
-def save_debug(image_name: str, original: np.ndarray, equalized: np.ndarray, gray: np.ndarray,binary: np.ndarray,
-               denoise: np.ndarray,
-               labels: np.ndarray,
-               regions: list):
+# =============================================================================
+#               DEBUG
+# =============================================================================
+def save_debug(
+    image_name: str,
+    original: np.ndarray,
+    equalized: np.ndarray,
+    gray: np.ndarray,
+    binary: np.ndarray,
+    denoise: np.ndarray,
+    labels: np.ndarray,
+    regions: list,
+):
 
     debug_dir = Path("../debug") / image_name
     debug_dir.mkdir(parents=True, exist_ok=True)
@@ -163,10 +125,12 @@ def save_debug(image_name: str, original: np.ndarray, equalized: np.ndarray, gra
     bbox = original.copy()
     element = []
     for region in regions:
-        res, coords = square_filter(denoise,binary,region)
+        res, coords = square_filter(denoise, binary, region)
         if res:
-            element.append({ "bbox": region.bbox, "corners": coords, "area": region.area})
-            bbox = draw_squares(bbox,[region.bbox])
+            element.append(
+                {"bbox": region.bbox, "corners": coords, "area": region.area}
+            )
+            bbox = draw_squares(bbox, [region.bbox])
             minr, minc, maxr, maxc = region.bbox
             """
             for elt in coords:
@@ -175,18 +139,21 @@ def save_debug(image_name: str, original: np.ndarray, equalized: np.ndarray, gra
                 bbox[rr,cc] = [0, 0, 255]
             """
         else:
-            bbox = draw_squares(bbox,[region.bbox],[0,0,255])
-    triplets = get_triplets(element,original.shape)
+            bbox = draw_squares(bbox, [region.bbox], [0, 0, 255])
+    triplets = get_triplets(element)
     triplets = filter_contained_triplets(triplets)
     for triplet in triplets:
         fourth = get_qr_corners(triplet)
-        bbox = draw_qr(bbox,fourth)
-
+        bbox = draw_qr(bbox, fourth)
     ski.io.imsave(debug_dir / "7_regions.png", bbox)
 
+
+# =============================================================================
+#               PROCESS FUNCTION OF THE IMAGES
+# =============================================================================
 def process_directory(image_path: str):
     im = load_image(image_path)
-    equalized, gray, binary= preprocess(im)
+    equalized, gray, binary = preprocess(im)
 
     ### square detections
     denoise = denoising(binary)
@@ -195,11 +162,13 @@ def process_directory(image_path: str):
 
     element = []
     for region in regions:
-        res, coords = square_filter(denoise,binary, region)
+        res, coords = square_filter(denoise, binary, region)
         if res:
-            element.append({"bbox": region.bbox, "corners": coords, "area": region.area})
+            element.append(
+                {"bbox": region.bbox, "corners": coords, "area": region.area}
+            )
 
-    triplets = get_triplets(element,im.shape)
+    triplets = get_triplets(element)
     triplets = filter_contained_triplets(triplets)
     print(f"{len(triplets)} QR code détectés")
     res = im.copy()
@@ -208,107 +177,14 @@ def process_directory(image_path: str):
         fourth = get_qr_corners(triplet)
         qr_code.append(fourth)
         res = draw_qr(res, fourth)
-    # valid_markers = list({m for triplet in triplets for m in triplet})
-
-    # save_debug("test", im, equalized, gray, binary, denoise, lab, regions)
 
     output_dir = Path("results")
     output_dir.mkdir(exist_ok=True)
 
     output_path = output_dir / f"{Path(image_path).stem}_res.png"
     save_image(str(output_path), res)
-    # save_image("res.png", res_draw)
-    #save_debug(Path(image_path).stem,im,equalized,gray,binary,denoise,lab,regions)
+
     return qr_code
-
-def precision(tp: int, fp: int) -> float:
-    if tp + fp:
-        return float(tp) / float(tp + fp)
-    return 0
-
-def recall(tp: int, fn: int) -> float:
-    if tp + fn:
-        return float(tp) / float(tp + fn)
-    return 0
-
-def f1(tp: int, fp: int,fn:int) -> float:
-    pres = precision(tp, fp)
-    recal = recall(tp, fn)
-    if pres + recal:
-        return float(2* pres * recal) / float(pres + recal)
-    return 0
-
-
-
-
-def compute_iou( box1,  box2) :
-    aminr, aminc, amaxr, amaxc = box1
-    bminr, bminc, bmaxr, bmaxc = box2
-    xA = max(aminc, bminc)
-    yA = max(aminr, bminr)
-    xB = min(amaxc, bmaxc)
-    yB = min(amaxr, bmaxr)
-    inter = max(0, xB-xA) * max(0, yB-yA)
-    areaA = (amaxc-aminc)*(amaxr-aminr)
-    areaB = (bmaxc-bminc)*(bmaxr-bminr)
-
-    union = areaA + areaB - inter
-    if union == 0:
-        return 0
-
-    return inter / union
-
-def evaluate(detections, ground_truth, threshold=0.5):
-    matched_gt = set()
-    tp = 0
-    fp = 0
-    for det in detections:
-        best_iou = 0
-        best_gt = -1
-        for i, gt in enumerate(ground_truth):
-            if i in matched_gt:
-                continue
-            iou = compute_iou(det, gt)
-            if iou > best_iou:
-                best_iou = iou
-                best_gt = i
-        if best_iou >= threshold:
-            tp += 1
-            matched_gt.add(best_gt)
-        else:
-            fp += 1
-    fn = len(ground_truth) - len(matched_gt)
-    return tp, fp, fn
-
-def mean_iou(detections, ground_truth):
-    scores = []
-    used = set()
-    for det in detections:
-        best = 0
-        best_gt = -1
-        for i,gt in enumerate(ground_truth):
-            if i in used:
-                continue
-            iou = compute_iou(det,gt)
-            if iou>best:
-                best=iou
-                best_gt=i
-        if best_gt!=-1:
-            used.add(best_gt)
-            scores.append(best)
-    if len(scores)==0:
-        return 0
-    return np.mean(scores)
-
-def get_result(valid_makers,ground_truth):
-    tp,fp,fn = evaluate(valid_makers,ground_truth)
-    pres = precision(tp, fp)
-    recal = recall(tp, fn)
-    f = f1(tp,fp,fn)
-    print("Precision :", pres)
-    print("Recall :", recal)
-    print("F1 :", f)
-
 
 
 def main():
@@ -318,18 +194,7 @@ def main():
         if image_file.suffix.lower() in {".jpg", ".jpeg", ".png"}:
             img_name = image_file.name
             print(f"\nTraitement de : {img_name}")
-            predictions = process_directory(str(image_file))
-            """
-            if img_name in groun_truh:
-                truth = groun_truh[img_name]
-                print(f"Évaluation par rapport à la vérité terrain ({len(truth)} attendu(s)) :")
-                # 3. On calcule et on affiche la Précision, le Rappel et le F1-Score
-                get_result(predictions, truth)
+            process_directory(str(image_file))
 
-                # Optionnel : afficher aussi le score moyen de superposition (IoU)
-                miou = mean_iou(predictions, truth)
-                print(f"Mean IoU : {miou:.2f}")
-            """
-    # process_directory("../data/Pastedimage.JPG")
 
 # main()

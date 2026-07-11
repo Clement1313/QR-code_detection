@@ -1,5 +1,4 @@
 *.o
-*.JPG
 *.png
 data/
 __pycache__
