@@ -641,8 +641,7 @@ namespace qr_code
             double outer_area = polygon_area(outer_corners);
             double inner_area = polygon_area(inner_corners);
 
-            if (inner_area == 0.0 || inner_area >= outer_area *
-            size_tolerance)
+            if (inner_area == 0.0 || inner_area >= outer_area * size_tolerance)
                 return false;
 
             std::vector<Point> intersection =
@@ -872,6 +871,15 @@ namespace qr_code
         if (region.area < 50)
             return false;
 
+        long image_area = static_cast<long>(denoise.sx) * denoise.sy;
+        if (region.area > image_area / 4)
+            return false;
+
+        int region_h = region.bbox[2] - region.bbox[0];
+        int region_w = region.bbox[3] - region.bbox[1];
+        if (region_h > denoise.sy / 2 || region_w > denoise.sx / 2)
+            return false;
+
         image::gray8_image square1 = crop_image(denoise, region.bbox);
         image::gray8_image square_im = get_inner_square(square1);
         std::vector<Point> coords = get_corner(square_im);
@@ -894,7 +902,7 @@ namespace qr_code
         if (!check_form(coords))
             return false;
         if (!check_finder_pattern_ratio(binary, region.bbox))
-            return false;        
+            return false;
         bool ok = check_form(coords);
         corners_out = coords;
         return true;
