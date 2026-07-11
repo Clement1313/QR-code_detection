@@ -2,7 +2,7 @@ from pathlib import Path
 import numpy as np
 import skimage as ski
 
-from python.square_detection import should_remove_smaller, filter_contained_triplets
+from python.square_detection import filter_contained_triplets
 from square_detection import square_filter, get_triplets, get_qr_corners, get_center
 from main import load_image, preprocess, denoising, labels,save_debug
 
@@ -235,5 +235,5 @@ def evaluate_folder(folder_path: str, iou_threshold: float = 0.5, verbose: bool 
 
 
 if __name__ == "__main__":
-    DATASET_FOLDER = "../data/Dataset/detection/monitor"
+    DATASET_FOLDER = ("../data/Dataset/detection/brightness")
     evaluate_folder(DATASET_FOLDER, iou_threshold=0.5, verbose=True)

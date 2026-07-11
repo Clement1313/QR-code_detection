@@ -256,6 +256,14 @@ def estimate_max_distance(elements,image_shape, factor=8):
 
 
 
+def point_in_convex_polygon(point, poly_ccw):
+    for i in range(len(poly_ccw)):
+        a, b = poly_ccw[i], poly_ccw[(i+1) % len(poly_ccw)]
+        cross = (b[1]-a[1])*(point[0]-a[0]) - (b[0]-a[0])*(point[1]-a[1])
+        if cross < 0:
+            return False
+    return True
+
 
 def polygon_area(corners):
     x = corners[:, 1]  # col
@@ -263,75 +271,40 @@ def polygon_area(corners):
     return 0.5 * abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
 
 
-def clip_polygon(subject, clip_poly):
-    def inside(p, a, b):
-        return (b[1]-a[1])*(p[0]-a[0]) - (b[0]-a[0])*(p[1]-a[1]) >= 0
+def ensure_ccw(corners):
+    if signed_area(corners) < 0:
+        return corners[::-1]
+    return corners
 
-    def intersect(p1, p2, a, b):
-        A1 = b[1]-a[1]
-        B1 = a[0]-b[0]
-        C1 = A1*a[0] + B1*a[1]
-        A2 = p2[1]-p1[1]
-        B2 = p1[0]-p2[0]
-        C2 = A2*p1[0] + B2*p1[1]
-        det = A1*B2 - A2*B1
-        if abs(det) < 1e-10:
-            return p2
-        x = (B2*C1 - B1*C2) / det
-        y = (A1*C2 - A2*C1) / det
-        return np.array([x, y])
+def signed_area(corners):
+    x = corners[:, 1]
+    y = corners[:, 0]
+    x_next = np.roll(x, -1)
+    y_next = np.roll(y, -1)
+    return 0.5 * np.sum(x * y_next - x_next * y)
 
-    output = list(subject)
-    n_clip = len(clip_poly)
-    for i in range(n_clip):
-        a, b = clip_poly[i], clip_poly[(i+1) % n_clip]
-        if not output:
-            break
-        input_list = output
-        output = []
-        n_in = len(input_list)
-        for j in range(n_in):
-            curr = input_list[j]
-            prev = input_list[j-1]
-            curr_in = inside(curr, a, b)
-            prev_in = inside(prev, a, b)
-            if curr_in:
-                if not prev_in:
-                    output.append(intersect(prev, curr, a, b))
-                output.append(curr)
-            elif prev_in:
-                output.append(intersect(prev, curr, a, b))
-    return np.array(output) if output else np.empty((0, 2))
+def triplet_contained_in(outer_triplet, inner_triplet, outer_corners):
+    outer_ccw = ensure_ccw(outer_corners)
+    centers = [get_center(m["bbox"]) for m in inner_triplet]
+    return any(point_in_convex_polygon(c, outer_ccw) for c in centers)
 
-def should_remove_smaller(outer_corners, inner_corners, size_tolerance=0.9, overlap_threshold=0.8):
-    outer_area = polygon_area(outer_corners)
-    inner_area = polygon_area(inner_corners)
-
-    if inner_area == 0 or inner_area >= outer_area * size_tolerance:
-        return False
-
-    intersection = clip_polygon(inner_corners, outer_corners)
-    if len(intersection) < 3:
-        return False
-    intersection_area = polygon_area(intersection)
-
-    overlap_ratio = intersection_area / inner_area
-    return overlap_ratio >= overlap_threshold
-
-def filter_contained_triplets(triplets, size_tolerance=0.9, overlap_threshold=0.8):
+def filter_contained_triplets(triplets):
     corners_list = [get_qr_corners(t) for t in triplets]
-
-    keep = [True] * len(triplets)
-    for i in range(len(triplets)):
-        if not keep[i]:
+    marker_sizes = [
+        np.mean([marker_size_from_corners(m) for m in triplet if marker_size_from_corners(m) is not None] or [0])
+        for triplet in triplets
+    ]
+    order = sorted(range(len(triplets)), key=lambda i: marker_sizes[i], reverse=True)
+    removed = set()
+    for pos, i in enumerate(order):
+        if i in removed:
             continue
-        for j in range(len(triplets)):
-            if i == j or not keep[j]:
+        for j in order[pos + 1:]:
+            if j in removed:
                 continue
-            if should_remove_smaller(corners_list[i], corners_list[j], size_tolerance, overlap_threshold):
-                keep[j] = False
-
-    return [t for t, k in zip(triplets, keep) if k]
+            if triplet_contained_in(triplets[i], triplets[j], corners_list[i]):
+                removed.add(j)
+    return [triplets[i] for i in order if i not in removed]
 
 
 def get_triplets(elements,image_shape, max_distance = None,angle_tolerance=35):

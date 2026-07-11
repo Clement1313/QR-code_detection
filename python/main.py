@@ -49,12 +49,7 @@ def denoising(im: np.ndarray) -> np.ndarray:
     selem = ski.morphology.disk(2)
     im = ski.morphology.closing(im, selem)
     im = ski.morphology.opening(im, selem)
-
-    #im = ski.morphology.remove_small_objects(im.astype(bool), min_size=20)
-    #im = ski.morphology.remove_small_holes(im, max_size=20)
-    # im = ski.morphology.erosion(im)
-    # im = ski.morphology.dilation(im)
-    return im.astype(np.uint8) # * 255
+    return im.astype(np.uint8)
 
 
 def labels(im: np.ndarray) -> np.ndarray:
@@ -88,59 +83,6 @@ def draw_squares(im_original: np.ndarray, squares,color=[0,255,0]):
         img[rr, cc] = color
 
     return img
-
-
-def find_squares(im_original: np.ndarray, regions: np.ndarray) -> np.ndarray:
-    squares = []
-    for region in regions:
-        if region.area < 500:
-            continue
-        if region.extent < 0.5:
-            continue
-        #minr, minc, maxr, maxc = region.bbox
-        #if (abs(minc-maxc) - 10) <= abs(minr-maxr) and abs(minr-maxr) <= (abs(minc-maxc) + 10):
-        #    squares.append((minr, minc, maxr, maxc))
-        squares.append(region.bbox)
-
-    res = draw_squares(im_original, squares)
-    # print(len(squares))
-    return squares, res
-
-def verif_square(im: np.ndarray, squares: np.ndarray) -> []:
-    res = []
-    for minr, minc, maxr, maxc in squares:
-        square = im[minr:maxr, minc:maxc]
-        e4 = ski.measure.euler_number(square, connectivity=1)
-        object_nb_4 = ski.measure.label(square, connectivity=1).max()
-        holes_nb_4 = object_nb_4 - e4
-        # print(f'e4:{e4}, nb obj:{object_nb_4}, holes:{holes_nb_4}')
-        if holes_nb_4 == 1 and object_nb_4 == 1:
-            res.append((minr, minc, maxr, maxc))
-    return res
-
-def filter_qr_triplets(markers: list, max_distance: float = 500.0) -> list:
-    if len(markers) < 3:
-        return []
-    centers = np.array([
-        ((minr + maxr) / 2, (minc + maxc) / 2)
-        for minr, minc, maxr, maxc in markers
-    ])
-    def distance(a, b):
-        return np.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
-    triplets = []
-    n = len(markers)
-    for i in range(n):
-        for j in range(i+1, n):
-            if distance(centers[i], centers[j]) > max_distance:
-                continue
-            for k in range(j+1, n):
-                if distance(centers[i], centers[k]) > max_distance:
-                    continue
-                if distance(centers[j], centers[k]) > max_distance:
-                    continue
-                triplets.append((markers[i], markers[j], markers[k]))
-    return triplets
-
 
 
 
@@ -208,106 +150,14 @@ def process_directory(image_path: str):
         fourth = get_qr_corners(triplet)
         qr_code.append(fourth)
         res = draw_qr(res, fourth)
-    # valid_markers = list({m for triplet in triplets for m in triplet})
-
-    # save_debug("test", im, equalized, gray, binary, denoise, lab, regions)
 
     output_dir = Path("results")
     output_dir.mkdir(exist_ok=True)
 
     output_path = output_dir / f"{Path(image_path).stem}_res.png"
     save_image(str(output_path), res)
-    # save_image("res.png", res_draw)
-    #save_debug(Path(image_path).stem,im,equalized,gray,binary,denoise,lab,regions)
+
     return qr_code
-
-def precision(tp: int, fp: int) -> float:
-    if tp + fp:
-        return float(tp) / float(tp + fp)
-    return 0
-
-def recall(tp: int, fn: int) -> float:
-    if tp + fn:
-        return float(tp) / float(tp + fn)
-    return 0
-
-def f1(tp: int, fp: int,fn:int) -> float:
-    pres = precision(tp, fp)
-    recal = recall(tp, fn)
-    if pres + recal:
-        return float(2* pres * recal) / float(pres + recal)
-    return 0
-
-
-
-
-def compute_iou( box1,  box2) :
-    aminr, aminc, amaxr, amaxc = box1
-    bminr, bminc, bmaxr, bmaxc = box2
-    xA = max(aminc, bminc)
-    yA = max(aminr, bminr)
-    xB = min(amaxc, bmaxc)
-    yB = min(amaxr, bmaxr)
-    inter = max(0, xB-xA) * max(0, yB-yA)
-    areaA = (amaxc-aminc)*(amaxr-aminr)
-    areaB = (bmaxc-bminc)*(bmaxr-bminr)
-
-    union = areaA + areaB - inter
-    if union == 0:
-        return 0
-
-    return inter / union
-
-def evaluate(detections, ground_truth, threshold=0.5):
-    matched_gt = set()
-    tp = 0
-    fp = 0
-    for det in detections:
-        best_iou = 0
-        best_gt = -1
-        for i, gt in enumerate(ground_truth):
-            if i in matched_gt:
-                continue
-            iou = compute_iou(det, gt)
-            if iou > best_iou:
-                best_iou = iou
-                best_gt = i
-        if best_iou >= threshold:
-            tp += 1
-            matched_gt.add(best_gt)
-        else:
-            fp += 1
-    fn = len(ground_truth) - len(matched_gt)
-    return tp, fp, fn
-
-def mean_iou(detections, ground_truth):
-    scores = []
-    used = set()
-    for det in detections:
-        best = 0
-        best_gt = -1
-        for i,gt in enumerate(ground_truth):
-            if i in used:
-                continue
-            iou = compute_iou(det,gt)
-            if iou>best:
-                best=iou
-                best_gt=i
-        if best_gt!=-1:
-            used.add(best_gt)
-            scores.append(best)
-    if len(scores)==0:
-        return 0
-    return np.mean(scores)
-
-def get_result(valid_makers,ground_truth):
-    tp,fp,fn = evaluate(valid_makers,ground_truth)
-    pres = precision(tp, fp)
-    recal = recall(tp, fn)
-    f = f1(tp,fp,fn)
-    print("Precision :", pres)
-    print("Recall :", recal)
-    print("F1 :", f)
 
 
 
@@ -318,18 +168,5 @@ def main():
         if image_file.suffix.lower() in {".jpg", ".jpeg", ".png"}:
             img_name = image_file.name
             print(f"\nTraitement de : {img_name}")
-            predictions = process_directory(str(image_file))
-            """
-            if img_name in groun_truh:
-                truth = groun_truh[img_name]
-                print(f"Évaluation par rapport à la vérité terrain ({len(truth)} attendu(s)) :")
-                # 3. On calcule et on affiche la Précision, le Rappel et le F1-Score
-                get_result(predictions, truth)
-
-                # Optionnel : afficher aussi le score moyen de superposition (IoU)
-                miou = mean_iou(predictions, truth)
-                print(f"Mean IoU : {miou:.2f}")
-            """
-    # process_directory("../data/Pastedimage.JPG")
-
+            process_directory(str(image_file))
 # main()
