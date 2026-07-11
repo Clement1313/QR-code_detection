@@ -12,19 +12,6 @@ MIN_RECALL = 0.80
 MIN_F1_SCORE = 0.80
 MIN_MEAN_IOU = 0.70
 
-
-def test_dataset_path():
-    dataset_path = DATASET_TEST_PATH.resolve()
-    print(f"Chemin résolu : {dataset_path}")
-    print(f"Existe : {dataset_path.exists()}")
-    if dataset_path.exists():
-        print(f"Contenu : {list(dataset_path.iterdir())}")
-    assert dataset_path.exists(), f"Dataset introuvable : {dataset_path}"
-
-    results = evaluate_folder(str(dataset_path), iou_threshold=0.5, verbose=True)
-    print(f"Résultats : {results}")
-
-
 def test_pipeline_performance():
     """
     Vérification de l'efficacité de la détection sur le dataset monitor
