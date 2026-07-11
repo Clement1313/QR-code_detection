@@ -3,7 +3,7 @@ from pathlib import Path
 from python.evaluation import evaluate_folder
 
 TEST_DIR = Path(__file__).parent
-DATASET_TEST_PATH = TEST_DIR / "../../data/test_integration"
+DATASET_TEST_PATH = TEST_DIR / "../../test_suite/test_integration"
 
 
 # Seuils minimums acceptables
