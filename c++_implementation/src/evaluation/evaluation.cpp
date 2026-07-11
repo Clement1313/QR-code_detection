@@ -12,7 +12,7 @@
 #include "detection/preprocess.hh"
 #include "util/image_io.hh"
 
-#define DEBUG true
+#define DEBUG false
 
 namespace
 {
@@ -145,8 +145,21 @@ namespace qr_code
             std::vector<Point> qr_corners = get_qr_corners(triplet);
             if (qr_corners.empty())
                 continue;
+
+            draw_qr(*image, qr_corners);
+
             detections.push_back(corners_to_bbox(qr_corners));
         }
+
+        std::filesystem::path input(image_path);
+        std::filesystem::create_directories("results");
+
+        std::filesystem::path output =
+            std::filesystem::path("results") / input.filename();
+
+        output.replace_extension(".tga");
+
+        save_image(*image, output.string().c_str());
 
         delete image;
         return detections;

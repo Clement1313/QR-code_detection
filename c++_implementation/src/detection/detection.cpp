@@ -688,6 +688,84 @@ namespace qr_code
             }
         }
 
+        bool check_finder_pattern_ratio(const image::gray8_image& binary,
+                                        const std::array<int, 4>& bbox,
+                                        double tolerance = 0.5,
+                                        double expand_factor = 1.8)
+        {
+            int minr = bbox[0], minc = bbox[1], maxr = bbox[2], maxc = bbox[3];
+            int cy = (minr + maxr) / 2;
+            int cx = (minc + maxc) / 2;
+
+            int half_h = static_cast<int>((maxr - minr) * expand_factor / 2.0);
+            int half_w = static_cast<int>((maxc - minc) * expand_factor / 2.0);
+
+            int scan_minr = std::max(0, cy - half_h);
+            int scan_maxr = std::min(binary.sy, cy + half_h);
+            int scan_minc = std::max(0, cx - half_w);
+            int scan_maxc = std::min(binary.sx, cx + half_w);
+
+            auto scan_line = [&](bool horizontal) {
+                std::vector<int> runs;
+                int prev = -1;
+                int run_len = 0;
+                int start = horizontal ? scan_minc : scan_minr;
+                int end = horizontal ? scan_maxc : scan_maxr;
+
+                for (int p = start; p < end; p++)
+                {
+                    int val = horizontal
+                        ? binary.get_buffer()[cy * binary.sx + p]
+                        : binary.get_buffer()[p * binary.sx + cx];
+                    int bit = (val > 127) ? 1 : 0;
+
+                    if (bit == prev)
+                    {
+                        run_len++;
+                    }
+                    else
+                    {
+                        if (prev != -1)
+                            runs.push_back(run_len);
+                        prev = bit;
+                        run_len = 1;
+                    }
+                }
+                if (prev != -1)
+                    runs.push_back(run_len);
+
+                if (runs.size() < 5)
+                    return false;
+
+                for (size_t i = 0; i + 5 <= runs.size(); i++)
+                {
+                    double unit =
+                        (runs[i] + runs[i + 1] + runs[i + 3] + runs[i + 4])
+                        / 4.0;
+                    if (unit <= 0.0)
+                        continue;
+
+                    double expected[5] = { unit, unit, 3.0 * unit, unit, unit };
+                    bool ok = true;
+                    for (int k = 0; k < 5; k++)
+                    {
+                        double diff =
+                            std::abs(runs[i + k] - expected[k]) / expected[k];
+                        if (diff > tolerance)
+                        {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if (ok)
+                        return true;
+                }
+                return false;
+            };
+
+            return scan_line(true) && scan_line(false);
+        }
+
     } // namespace
 
     LabelImage labels(const image::gray8_image& denoise)
@@ -785,12 +863,21 @@ namespace qr_code
     }
 
     bool square_filter(const image::gray8_image& denoise,
-                       const image::gray8_image& /*binary*/,
-                       const Region& region, std::vector<Point>& corners_out)
+                       const image::gray8_image& binary, const Region& region,
+                       std::vector<Point>& corners_out)
     {
         corners_out.clear();
 
         if (region.area < 50)
+            return false;
+
+        long image_area = static_cast<long>(denoise.sx) * denoise.sy;
+        if (region.area > image_area / 4)
+            return false;
+
+        int region_h = region.bbox[2] - region.bbox[0];
+        int region_w = region.bbox[3] - region.bbox[1];
+        if (region_h > denoise.sy / 2 || region_w > denoise.sx / 2)
             return false;
 
         image::gray8_image square1 = crop_image(denoise, region.bbox);
@@ -812,9 +899,13 @@ namespace qr_code
         if (!check_region_shape(region))
             return false;
 
+        if (!check_form(coords))
+            return false;
+        if (!check_finder_pattern_ratio(binary, region.bbox))
+            return false;
         bool ok = check_form(coords);
         corners_out = coords;
-        return ok;
+        return true;
     }
 
     Point get_center(const std::array<int, 4>& bbox)
