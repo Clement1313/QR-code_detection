@@ -2,8 +2,7 @@ from pathlib import Path
 import numpy as np
 import skimage as ski
 
-from python.square_detection import should_remove_smaller, filter_contained_triplets
-from square_detection import square_filter, get_triplets, get_qr_corners, get_center
+from square_detection import square_filter, get_triplets, get_qr_corners, filter_contained_triplets
 from main import load_image, preprocess, denoising, labels,save_debug
 
 def parse_ground_truth(txt_path: Path) -> list[list[tuple[float, float]]]:
