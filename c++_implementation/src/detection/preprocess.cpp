@@ -7,6 +7,7 @@
 
 #include "util/histogram.hh"
 #include "util/image_io.hh"
+
 namespace qr_code
 {
 
@@ -172,22 +173,130 @@ namespace qr_code
             th.join();
     }
 
-    void bin(image::gray8_image& image, image::gray8_image& buffer)
+    struct IntegralImages
     {
-        std::vector<uint8_t> threshold(image.sx * image.sy, 0);
-        threshold_local(threshold, image, 35, 10);
-        for (int offset = 0; offset < image.sx * image.sy; offset++)
+        std::vector<uint64_t> sum;
+        std::vector<uint64_t> sqsum;
+    };
+
+    IntegralImages build_integrals(const image::gray8_image& image)
+    {
+        const int w = image.sx;
+        const int h = image.sy;
+
+        IntegralImages ii;
+        ii.sum.assign((w + 1) * (h + 1), 0);
+        ii.sqsum.assign((w + 1) * (h + 1), 0);
+
+        const uint8_t* src = image.get_buffer();
+
+        for (int y = 0; y < h; ++y)
         {
-            uint8_t val = image.get_buffer()[offset];
-            if (val > threshold[offset])
+            uint64_t rowsum = 0;
+            uint64_t rowsqsum = 0;
+
+            for (int x = 0; x < w; ++x)
             {
-                buffer.get_buffer()[offset] = 255;
-            }
-            else
-            {
-                buffer.get_buffer()[offset] = 0;
+                uint8_t v = src[y * w + x];
+
+                rowsum += v;
+                rowsqsum += uint64_t(v) * v;
+
+                ii.sum[(y + 1) * (w + 1) + (x + 1)] =
+                    ii.sum[y * (w + 1) + (x + 1)] + rowsum;
+
+                ii.sqsum[(y + 1) * (w + 1) + (x + 1)] =
+                    ii.sqsum[y * (w + 1) + (x + 1)] + rowsqsum;
             }
         }
+
+        return ii;
+    }
+
+    void threshold_sauvola(std::vector<uint8_t>& threshold,
+                           image::gray8_image& image, int blocksize = 31,
+                           double k = 0.34, double R = 128.0)
+    {
+        if ((blocksize & 1) == 0)
+            ++blocksize;
+
+        const int r = blocksize / 2;
+        const int w = image.sx;
+        const int h = image.sy;
+
+        auto ii = build_integrals(image);
+
+        auto rectSum = [&](const std::vector<uint64_t>& I, int x0, int y0,
+                           int x1, int y1) {
+            return I[(y1 + 1) * (w + 1) + (x1 + 1)] - I[y0 * (w + 1) + (x1 + 1)]
+                - I[(y1 + 1) * (w + 1) + x0] + I[y0 * (w + 1) + x0];
+        };
+
+        auto worker = [&](int y0, int y1) {
+            for (int y = y0; y < y1; ++y)
+            {
+                int yy0 = std::max(0, y - r);
+                int yy1 = std::min(h - 1, y + r);
+
+                for (int x = 0; x < w; ++x)
+                {
+                    int xx0 = std::max(0, x - r);
+                    int xx1 = std::min(w - 1, x + r);
+
+                    const int count = (xx1 - xx0 + 1) * (yy1 - yy0 + 1);
+
+                    double s = double(rectSum(ii.sum, xx0, yy0, xx1, yy1));
+
+                    double ss = double(rectSum(ii.sqsum, xx0, yy0, xx1, yy1));
+
+                    double mean = s / count;
+
+                    double variance = ss / count - mean * mean;
+                    variance = std::max(0.0, variance);
+
+                    double stddev = std::sqrt(variance);
+
+                    double T = mean * (1.0 + k * (stddev / R - 1.0));
+
+                    threshold[y * w + x] =
+                        static_cast<uint8_t>(std::clamp(T, 0.0, 255.0));
+                }
+            }
+        };
+
+        unsigned workers = std::max(1u, std::thread::hardware_concurrency());
+        workers = std::min(workers, unsigned(h));
+
+        std::vector<std::thread> threads;
+
+        int rows = (h + workers - 1) / workers;
+
+        for (unsigned t = 0; t < workers; ++t)
+        {
+            int begin = t * rows;
+            int end = std::min(h, begin + rows);
+
+            if (begin < end)
+                threads.emplace_back(worker, begin, end);
+        }
+
+        for (auto& th : threads)
+            th.join();
+    }
+
+    void bin(image::gray8_image& image, image::gray8_image& buffer)
+    {
+        std::vector<uint8_t> threshold(image.sx * image.sy);
+
+        threshold_sauvola(threshold, image, 300, 0.34);
+
+        const uint8_t* src = image.get_buffer();
+        uint8_t* dst = buffer.get_buffer();
+
+        const int n = image.sx * image.sy;
+
+        for (int i = 0; i < n; ++i)
+            dst[i] = (src[i] > threshold[i]) ? 255 : 0;
     }
 
     void erosion(const image::gray8_image& buffer, image::gray8_image& eroded,
