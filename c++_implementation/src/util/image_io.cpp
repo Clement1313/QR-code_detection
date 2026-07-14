@@ -68,10 +68,17 @@ bool save_image(rgb24_image &image, const char *filename) {
   //fwrite(&header, sizeof(tga_header), 1, f);
 
   buffer_bgr = new uint8_t[image.length];
-  for(std::size_t i = 0 ; i < image.length ; i+=3) {//rgb2bgr
-    buffer_bgr[i] = image.pixels[i+2];
-    buffer_bgr[i+1] = image.pixels[i+1];
-    buffer_bgr[i+2] = image.pixels[i];
+  const std::size_t row_size = static_cast<std::size_t>(image.sx) * 3;
+  for (int y = 0; y < image.sy; ++y) {
+    const std::size_t src_row = static_cast<std::size_t>(image.sy - 1 - y) * row_size;
+    const std::size_t dst_row = static_cast<std::size_t>(y) * row_size;
+    for (std::size_t x = 0; x < row_size; x += 3) {//rgb2bgr + inversion verticale
+      const std::size_t src = src_row + x;
+      const std::size_t dst = dst_row + x;
+      buffer_bgr[dst] = image.pixels[src + 2];
+      buffer_bgr[dst + 1] = image.pixels[src + 1];
+      buffer_bgr[dst + 2] = image.pixels[src];
+    }
   }
   //fwrite(buffer_bgr, 1, image.length, f);
   outfile.write((char *)(buffer_bgr), image.length);
