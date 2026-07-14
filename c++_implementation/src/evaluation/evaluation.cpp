@@ -76,14 +76,14 @@ namespace qr_code
                     throw std::runtime_error("Ligne invalide : " + line);
                 std::vector<Point> pts;
                 for (int i = 0; i < 8; i += 2)
-                    pts.push_back({ values[i], values[i + 1] });
+                    pts.push_back({ values[i + 1], values[i] });
                 qr_codes.push_back(std::move(pts));
             }
             else
             {
                 if (values.size() != 2)
                     throw std::runtime_error("Ligne invalide : " + line);
-                current_pts.push_back({ values[0], values[1] });
+                current_pts.push_back({ values[1], values[0] });
             }
         }
 
